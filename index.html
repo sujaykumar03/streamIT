@@ -218,7 +218,7 @@
                 const roomDocRef = doc(collection(db, `artifacts/${appId}/public/data/rooms`));
                 roomId = roomDocRef.id;
                 
-                shareLinkInput.value = `${window.location.href.split('?')[0]}?room=${roomId}`;
+                shareLinkInput.value = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
 
                 const callerCandidatesCollection = collection(roomDocRef, 'callerCandidates');
                 pc.onicecandidate = e => e.candidate && addDoc(callerCandidatesCollection, e.candidate.toJSON());
