@@ -33,7 +33,6 @@
 </head>
 <body class="bg-gray-900 text-white flex flex-col h-screen antialiased">
 
-    <!-- Header -->
     <header class="bg-gray-800/50 backdrop-blur-sm border-b border-gray-700 p-4 shadow-lg z-10">
         <div class="container mx-auto flex justify-between items-center">
             <h1 class="text-2xl font-bold text-indigo-400">Streamify</h1>
@@ -45,9 +44,7 @@
         </div>
     </header>
 
-    <!-- Main Content -->
     <main class="flex-grow container mx-auto p-4 md:p-8 flex items-center justify-center relative">
-        <!-- Entry View -->
         <div id="entry-view" class="w-full max-w-md">
             <div class="bg-gray-800/50 p-8 rounded-2xl shadow-2xl border border-gray-700 backdrop-blur-lg text-center">
                 <h2 class="text-3xl font-bold text-white mb-6">Welcome to Streamify</h2>
@@ -66,7 +63,6 @@
             </div>
         </div>
 
-        <!-- In-Call View -->
         <div id="in-call-view" class="w-full h-full hidden">
             <div id="stream-container" class="bg-black rounded-xl border-2 border-dashed border-gray-700 flex flex-col items-center justify-center transition-all duration-300 relative group">
                 <video id="screen-video" class="w-full h-full object-contain rounded-xl" autoplay playsinline></video>
@@ -99,10 +95,9 @@
             </div>
     </main>
 
-    <!-- Controls Footer -->
     <footer id="in-call-footer" class="bg-gray-800/50 backdrop-blur-sm border-t border-gray-700 p-4 z-10 hidden">
         <div class="container mx-auto flex items-center justify-between">
-            <div id="share-link-container" class="w-1/3">
+            <div id="share-link-container" class="w-1/3 opacity-0 transition-opacity duration-500">
                  <label for="share-link-input" class="text-xs text-gray-400 mb-1 block">Invite Guest with this Link:</label>
                  <div class="relative flex items-center">
                     <input id="share-link-input" type="text" class="w-full bg-gray-900 text-indigo-300 pr-10 p-2 rounded-lg border border-gray-700 focus:outline-none" readonly>
@@ -144,7 +139,7 @@
             apiKey: "AIzaSyBMowosdHk3qp9cBSnc_M1uul7VLjJpJj4",
             authDomain: "streamit-d7e89.firebaseapp.com",
             projectId: "streamit-d7e89",
-            storageBucket: "streamit-d7e89.firebasestorage.app", // Corrected
+            storageBucket: "streamit-d7e89.firebasestorage.app",
             messagingSenderId: "770140743500",
             appId: "1:770140743500:web:4d041b6c923687022711e9"
         };
@@ -180,7 +175,6 @@
         const localAvatar = document.getElementById('local-avatar');
         const remoteAvatar = document.getElementById('remote-avatar');
 
-
         // --- WebRTC & State ---
         let pc;
         let localStream = null;
@@ -194,17 +188,21 @@
             pc.ontrack = handleRemoteTrack;
         };
         
-        const switchToInCallView = () => {
+        const switchToInCallView = (isHost = false) => {
             entryView.classList.add('hidden');
             inCallView.classList.remove('hidden');
             inCallFooter.classList.remove('hidden');
             statusIndicators.classList.remove('hidden');
             statusIndicators.classList.add('flex');
+            if (!isHost) {
+                shareScreenBtn.classList.add('hidden');
+                shareLinkContainer.style.visibility = 'hidden';
+            }
         };
 
         const createRoom = async () => {
             initializePeerConnection();
-            switchToInCallView();
+            switchToInCallView(true);
             
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -218,7 +216,8 @@
                 const roomDocRef = doc(collection(db, `artifacts/${appId}/public/data/rooms`));
                 roomId = roomDocRef.id;
                 
-                shareLinkInput.value = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
+                shareLinkInput.value = `${window.location.href.split('?')[0]}?room=${roomId}`;
+                shareLinkContainer.classList.remove('opacity-0');
 
                 const callerCandidatesCollection = collection(roomDocRef, 'callerCandidates');
                 pc.onicecandidate = e => e.candidate && addDoc(callerCandidatesCollection, e.candidate.toJSON());
@@ -238,16 +237,15 @@
 
             } catch (err) {
                 console.error("Error during room creation process:", err);
-                placeholder.innerHTML = `<div class="text-red-400 p-4 text-center"><strong>Failed to Create Room</strong><br>Please allow camera/mic permissions and try again. If the issue persists, check the browser console for errors.</div>`;
+                placeholder.innerHTML = `<div class="text-red-400 p-4 text-center"><strong>Failed to Create Room</strong><br>Please allow camera/mic permissions and try again.</div>`;
             }
         };
 
         const joinRoom = async (joinRoomId) => {
             initializePeerConnection();
-            switchToInCallView();
+            switchToInCallView(false);
             roomId = joinRoomId;
-            shareScreenBtn.classList.add('hidden');
-
+            
             const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms`, roomId);
             const roomSnap = await getDoc(roomDocRef);
 
@@ -279,35 +277,30 @@
             await updateDoc(roomDocRef, { answer: { type: answer.type, sdp: answer.sdp } });
         };
         
-        function handleRemoteTrack({ track }) {
+        function handleRemoteTrack({ track, streams }) {
             placeholder.classList.add('hidden');
-            if (!remoteStream) remoteStream = new MediaStream();
+            const mainStream = streams[0];
+            if (!mainStream) return;
             
-            remoteStream.addTrack(track);
-
-            const screenVideoTrack = remoteStream.getVideoTracks().find(t => 'displaySurface' in t.getSettings());
-            const cameraVideoTrack = remoteStream.getVideoTracks().find(t => !('displaySurface' in t.getSettings()));
+            const isScreen = 'displaySurface' in track.getSettings();
             
-            if (screenVideoTrack && !screenVideo.srcObject) {
-                screenVideo.srcObject = new MediaStream([screenVideoTrack]);
-                screenStatusDot.classList.add('active');
-                fullscreenBtn.classList.remove('hidden');
-            }
-            
-            if (cameraVideoTrack && !remoteVideo.srcObject) {
-                remoteVideo.srcObject = new MediaStream([cameraVideoTrack]);
-                remoteVideoContainer.classList.remove('hidden');
-                updateRemoteCamera(true);
-                track.onunmute = () => updateRemoteCamera(true);
-                track.onmute = () => updateRemoteCamera(false);
-            }
-
-            if (remoteStream.getAudioTracks().length > 0 && !remoteAudio.srcObject) {
-                remoteAudio.srcObject = new MediaStream(remoteStream.getAudioTracks());
-                const audioTrack = remoteStream.getAudioTracks()[0];
+            if (track.kind === 'video') {
+                const videoEl = isScreen ? screenVideo : remoteVideo;
+                videoEl.srcObject = new MediaStream([track]); // Use only the specific track for its element
+                if (isScreen) {
+                    screenStatusDot.classList.add('active');
+                    fullscreenBtn.classList.remove('hidden');
+                } else {
+                    remoteVideoContainer.classList.remove('hidden');
+                    updateRemoteCamera(true);
+                    track.onmute = () => updateRemoteCamera(false);
+                    track.onunmute = () => updateRemoteCamera(true);
+                }
+            } else if (track.kind === 'audio') {
+                remoteAudio.srcObject = new MediaStream([track]);
                 updateRemoteMic(true);
-                track.onunmute = () => updateRemoteMic(true);
                 track.onmute = () => updateRemoteMic(false);
+                track.onunmute = () => updateRemoteMic(true);
             }
         }
 
@@ -375,44 +368,7 @@
                 lucide.createIcons();
             }
         };
-
-        const toggleFullscreen = () => {
-            if (!document.fullscreenElement) {
-                streamContainer.requestFullscreen().catch(err => {
-                    alert(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
-                });
-            } else {
-                document.exitFullscreen();
-            }
-        };
         
-        createRoomBtn.addEventListener('click', createRoom);
-        joinRoomForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const url = document.getElementById('join-room-input').value;
-            try {
-                const joinRoomId = new URL(url).searchParams.get('room');
-                if (joinRoomId) joinRoom(joinRoomId);
-                else alert("Invalid room link.");
-            } catch (error) { alert("Please paste a valid room link."); }
-        });
-        
-        shareScreenBtn.addEventListener('click', () => {
-            if (screenTrackSender) stopSharingScreen();
-            else shareScreen();
-        });
-
-        hangupBtn.addEventListener('click', hangUp);
-        micBtn.addEventListener('click', toggleMic);
-        cameraBtn.addEventListener('click', toggleCamera);
-        fullscreenBtn.addEventListener('click', toggleFullscreen);
-        copyLinkBtn.addEventListener('click', () => {
-            shareLinkInput.select();
-            document.execCommand('copy');
-            copySuccess.classList.remove('hidden');
-            setTimeout(() => copySuccess.classList.add('hidden'), 2000);
-        });
-
         async function shareScreen() {
             try {
                 const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
@@ -446,6 +402,33 @@
             lucide.createIcons();
         }
 
+        createRoomBtn.addEventListener('click', createRoom);
+        joinRoomForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const url = document.getElementById('join-room-input').value;
+            try {
+                const joinRoomId = new URL(url).searchParams.get('room');
+                if (joinRoomId) joinRoom(joinRoomId);
+                else alert("Invalid room link.");
+            } catch (error) { alert("Please paste a valid room link."); }
+        });
+        
+        shareScreenBtn.addEventListener('click', () => {
+            if (screenTrackSender) stopSharingScreen();
+            else shareScreen();
+        });
+
+        hangupBtn.addEventListener('click', hangUp);
+        micBtn.addEventListener('click', toggleMic);
+        cameraBtn.addEventListener('click', toggleCamera);
+        fullscreenBtn.addEventListener('click', () => document.getElementById('stream-container').requestFullscreen());
+        copyLinkBtn.addEventListener('click', () => {
+            shareLinkInput.select();
+            document.execCommand('copy');
+            copySuccess.classList.remove('hidden');
+            setTimeout(() => copySuccess.classList.add('hidden'), 2000);
+        });
+
         window.addEventListener('load', () => {
             lucide.createIcons();
             const joinRoomId = new URLSearchParams(window.location.search).get('room');
@@ -454,4 +437,3 @@
     </script>
 </body>
 </html>
-
