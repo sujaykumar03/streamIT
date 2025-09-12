@@ -210,29 +210,33 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, collection, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, updateDoc, onSnapshot, collection, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Firebase & App Setup
         const firebaseConfig = {
-  apiKey: "AIzaSyBMowosdHk3qp9cBSnc_M1uul7VLjJpJj4",
-  authDomain: "streamit-d7e89.firebaseapp.com",
-  projectId: "streamit-d7e89",
-  storageBucket: "streamit-d7e89.firebasestorage.app",
-  messagingSenderId: "770140743500",
-  appId: "1:770140743500:web:4d041b6c923687022711e9",
-  measurementId: "G-JPC9ZHKVR3"
+            apiKey: "AIzaSyBMowosdHk3qp9cBSnc_M1uul7VLjJpJj4",
+            authDomain: "streamit-d7e89.firebaseapp.com",
+            projectId: "streamit-d7e89",
+            storageBucket: "streamit-d7e89.appspot.com", // Corrected storage bucket format
+            messagingSenderId: "770140743500",
+            appId: "1:770140743500:web:4d041b6c923687022711e9",
+            measurementId: "G-JPC9ZHKVR3"
         };
-        const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
-        let db, auth;
+
+        let db, auth, app;
+        const appId = firebaseConfig.projectId;
+
         try {
-            const app = initializeApp(firebaseConfig);
+            app = initializeApp(firebaseConfig);
             db = getFirestore(app);
             auth = getAuth(app);
-        } catch (e) { console.error("Firebase initialization failed:", e); document.body.innerHTML = '<div class="text-red-500 text-center p-8">Error: Could not connect to the backend.</div>'; return; }
-
-        if (initialAuthToken) { await signInWithCustomToken(auth, initialAuthToken); } else { await signInAnonymously(auth); }
+            await signInAnonymously(auth);
+        } catch (e) {
+            console.error("Firebase initialization failed:", e);
+            document.body.innerHTML = '<div class="text-red-500 text-center p-8">Error: Could not connect to the backend. Verify Firebase config and permissions.</div>';
+            return;
+        }
         
         // DOM Elements
         const screenVideo = document.getElementById('screen-video'), localVideo = document.getElementById('local-video'), remoteVideo = document.getElementById('remote-video');
@@ -263,8 +267,8 @@ const analytics = getAnalytics(app);
             localVideoContainer.classList.remove('hidden');
             micBtn.disabled = false;
             cameraBtn.disabled = false;
-            toggleMic(true);
-            toggleCamera(false);
+            toggleMic(false); // Start unmuted
+            toggleCamera(false); // Start with camera on
         };
         
         // --- WebRTC Core Logic ---
@@ -273,20 +277,26 @@ const analytics = getAnalytics(app);
             createRoomBtn.innerHTML = '<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> Creating...';
             lucide.createIcons();
             
-            const roomRef = await addDoc(collection(db, `artifacts/${appId}/public/data/rooms`), {});
-            roomId = roomRef.id;
             await setupLocalMedia(true);
+
+            const roomRef = collection(db, `artifacts/${appId}/public/data/rooms`);
+            const roomDocRef = await addDoc(roomRef, {});
+            roomId = roomDocRef.id;
+
+            const callerCandidatesCollection = collection(roomDocRef, 'callerCandidates');
             
             localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-            pc.onicecandidate = e => e.candidate && addDoc(collection(roomRef, 'callerCandidates'), e.candidate.toJSON());
+            pc.onicecandidate = e => e.candidate && addDoc(callerCandidatesCollection, e.candidate.toJSON());
             pc.ontrack = handleRemoteTrack;
 
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
-            await updateDoc(roomRef, { offer: { type: offer.type, sdp: offer.sdp } });
+            await updateDoc(roomDocRef, { offer: { type: offer.type, sdp: offer.sdp } });
             
-            onSnapshot(roomRef, snap => snap.data()?.answer && !pc.currentRemoteDescription && pc.setRemoteDescription(new RTCSessionDescription(snap.data().answer)));
-            onSnapshot(collection(roomRef, 'calleeCandidates'), snap => snap.docChanges().forEach(c => c.type === 'added' && pc.addIceCandidate(new RTCIceCandidate(c.doc.data()))));
+            onSnapshot(roomDocRef, snap => snap.data()?.answer && !pc.currentRemoteDescription && pc.setRemoteDescription(new RTCSessionDescription(snap.data().answer)));
+
+            const calleeCandidatesCollection = collection(roomDocRef, 'calleeCandidates');
+            onSnapshot(calleeCandidatesCollection, snap => snap.docChanges().forEach(c => c.type === 'added' && pc.addIceCandidate(new RTCIceCandidate(c.doc.data()))));
 
             shareLinkInput.value = `${window.location.href.split('?')[0]}?room=${roomId}`;
             shareModal.classList.remove('hidden');
@@ -297,24 +307,27 @@ const analytics = getAnalytics(app);
 
         const joinRoom = async (joinRoomId) => {
             roomId = joinRoomId;
-            const roomRef = doc(db, `artifacts/${appId}/public/data/rooms`, roomId);
-            const roomSnap = await getDoc(roomRef);
+            const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms`, roomId);
+            const roomSnap = await getDoc(roomDocRef);
 
             if (!roomSnap.exists()) { placeholder.innerHTML = `<div class="text-red-400">Error: Room not found!</div>`; return; }
             placeholder.innerHTML = `<div class="text-center text-gray-500"><i data-lucide="user-plus" class="w-24 h-24 mx-auto mb-4"></i><h2 class="text-2xl font-semibold">Joining room...</h2></div>`; lucide.createIcons();
             
             await setupLocalMedia(false);
+
+            const calleeCandidatesCollection = collection(roomDocRef, 'calleeCandidates');
             
             localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-            pc.onicecandidate = e => e.candidate && addDoc(collection(roomRef, 'calleeCandidates'), e.candidate.toJSON());
+            pc.onicecandidate = e => e.candidate && addDoc(calleeCandidatesCollection, e.candidate.toJSON());
             pc.ontrack = handleRemoteTrack;
 
             await pc.setRemoteDescription(new RTCSessionDescription(roomSnap.data().offer));
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
-            await updateDoc(roomRef, { answer: { type: answer.type, sdp: answer.sdp } });
+            await updateDoc(roomDocRef, { answer: { type: answer.type, sdp: answer.sdp } });
             
-            onSnapshot(collection(roomRef, 'callerCandidates'), snap => snap.docChanges().forEach(c => c.type === 'added' && pc.addIceCandidate(new RTCIceCandidate(c.doc.data()))));
+            const callerCandidatesCollection = collection(roomDocRef, 'callerCandidates');
+            onSnapshot(callerCandidatesCollection, snap => snap.docChanges().forEach(c => c.type === 'added' && pc.addIceCandidate(new RTCIceCandidate(c.doc.data()))));
 
             createRoomBtn.classList.add('hidden');
             hangupBtn.classList.remove('hidden');
@@ -326,11 +339,12 @@ const analytics = getAnalytics(app);
             const track = event.track;
 
             if (track.kind === 'video') {
-                if (track.getSettings().displaySurface) {
-                    screenVideo.srcObject = stream;
+                const isScreenTrack = 'displaySurface' in track.getSettings();
+                if (isScreenTrack) {
+                    screenVideo.srcObject = new MediaStream([track]);
                     screenStatusDot.classList.add('active');
                 } else {
-                    remoteStream = stream;
+                    remoteStream = new MediaStream([track]);
                     remoteVideo.srcObject = remoteStream;
                     remoteVideoContainer.classList.remove('hidden');
                     track.onunmute = () => updateRemoteCamera(true);
@@ -338,6 +352,12 @@ const analytics = getAnalytics(app);
                 }
             }
              if (track.kind === 'audio') {
+                // To avoid multiple audio contexts, just use the main stream
+                const remoteAudioStream = new MediaStream([track]);
+                const audioPlayer = new Audio();
+                audioPlayer.srcObject = remoteAudioStream;
+                audioPlayer.play();
+
                 track.onunmute = () => updateRemoteMic(true);
                 track.onmute = () => updateRemoteMic(false);
             }
@@ -355,7 +375,7 @@ const analytics = getAnalytics(app);
         const toggleMic = (forceMute) => {
             const audioTrack = localStream?.getAudioTracks()[0];
             if (!audioTrack) return;
-            const isMuted = forceMute ?? !audioTrack.enabled;
+            const isMuted = forceMute ?? audioTrack.enabled;
             audioTrack.enabled = !isMuted;
             micBtn.querySelector('span').textContent = isMuted ? 'Unmute' : 'Mute';
             micBtn.querySelector('i').outerHTML = `<i id="mic-icon" data-lucide="${isMuted ? 'mic-off' : 'mic'}" class="w-5 h-5"></i>`;
@@ -365,12 +385,12 @@ const analytics = getAnalytics(app);
         };
 
         const toggleCamera = (forceOff) => {
-            const videoTrack = localStream?.getVideoTracks().find(track => !track.getSettings().displaySurface);
+            const videoTrack = localStream?.getVideoTracks().find(track => !('displaySurface' in track.getSettings()));
             if (!videoTrack) return;
-            const isOff = forceOff ?? !videoTrack.enabled;
+            const isOff = forceOff ?? videoTrack.enabled;
             videoTrack.enabled = !isOff;
             cameraBtn.querySelector('span').textContent = isOff ? 'Start Camera' : 'Stop Camera';
-            cameraBtn.querySelector('i').outerHTML = `<i id="camera-icon" data-lucide="${isOff ? 'video' : 'video-off'}" class="w-5 h-5"></i>`;
+            cameraBtn.querySelector('i').outerHTML = `<i id="camera-icon" data-lucide="${isOff ? 'video-off' : 'video'}" class="w-5 h-5"></i>`;
             localVideo.classList.toggle('hidden', isOff);
             localAvatar.classList.toggle('hidden', !isOff);
             localVideoContainer.classList.toggle('cam-off', isOff);
