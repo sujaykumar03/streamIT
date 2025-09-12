@@ -225,11 +225,11 @@
             measurementId: "G-JPC9ZHKVR3"
         };
 
-        let db, auth, app;
+        let db, auth;
         const appId = firebaseConfig.projectId;
 
         try {
-            app = initializeApp(firebaseConfig);
+            const app = initializeApp(firebaseConfig);
             db = getFirestore(app);
             auth = getAuth(app);
             await signInAnonymously(auth);
@@ -253,79 +253,72 @@
 
 
         // --- WebRTC & State ---
-        const servers = { iceServers: [{ urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }] };
-        let pc; // Will be initialized before each call
+        let pc; // PeerConnection
         let localStream = null;
         let roomId = null;
-        let remoteStream = null;
 
-        const setupLocalMedia = async (isHost) => {
-            try {
-                if (isHost) {
-                    const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always" } });
-                    const userMedia = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                    
-                    screenVideo.srcObject = screenStream;
-                    screenStatusDot.classList.add('active');
-                    screenStream.getVideoTracks()[0].onended = hangUp;
-                    localStream = new MediaStream([...userMedia.getTracks(), ...screenStream.getTracks()]);
-                } else {
-                    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                }
-                
-                const localPreviewStream = new MediaStream(localStream.getVideoTracks().filter(t => !t.getSettings().displaySurface));
-                localVideo.srcObject = localPreviewStream;
-                
-                localVideoContainer.classList.remove('hidden');
-                micBtn.disabled = false;
-                cameraBtn.disabled = false;
-                
-                updateMicUI(true);
-                updateCameraUI(true);
-
-            } catch (error) {
-                console.error("Error accessing media devices.", error);
-                placeholder.innerHTML = `<div class="text-red-400">Could not start. Please allow permissions.</div>`;
-                createRoomBtn.disabled = false;
-                createRoomBtn.innerHTML = '<span>Create Room</span>';
-            }
-        };
-        
         const initializePeerConnection = () => {
-            pc = new RTCPeerConnection(servers);
+            pc = new RTCPeerConnection({
+                sdpSemantics: "unified-plan",
+                iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+            });
 
-            // NEW: Add a diagnostic listener
-            pc.onconnectionstatechange = event => {
-                console.log(`Connection state changed to: ${pc.connectionState}`);
+            pc.onconnectionstatechange = () => {
+                console.log(`Peer Connection State: ${pc.connectionState}`);
                 if (pc.connectionState === 'failed') {
-                    console.error('Peer connection failed.');
-                }
-                 if (pc.connectionState === 'connected') {
-                    console.log('Peer connection successful!');
+                   console.error('Peer connection failed. Restarting ICE.');
+                   pc.restartIce();
                 }
             };
-        }
+
+            pc.ontrack = handleRemoteTrack;
+        };
         
         // --- WebRTC Core Logic ---
         const createRoom = async () => {
             initializePeerConnection();
-            console.log('Creating room...');
             createRoomBtn.disabled = true;
             createRoomBtn.innerHTML = '<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> Creating...';
             lucide.createIcons();
             
-            await setupLocalMedia(true);
-            if (!localStream) return;
+            // 1. Get user media first
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always" } });
 
+                localStream = new MediaStream([...stream.getTracks(), ...screenStream.getTracks()]);
+                
+                // Display local streams
+                localVideo.srcObject = new MediaStream(stream.getVideoTracks());
+                screenVideo.srcObject = screenStream;
+
+                // Add transceivers for each track
+                stream.getTracks().forEach(track => pc.addTransceiver(track, { direction: 'sendrecv' }));
+                screenStream.getTracks().forEach(track => pc.addTransceiver(track, { direction: 'sendonly' }));
+                
+                localVideoContainer.classList.remove('hidden');
+                micBtn.disabled = false;
+                cameraBtn.disabled = false;
+                updateMicUI(true);
+                updateCameraUI(true);
+                screenStatusDot.classList.add('active');
+                screenStream.getVideoTracks()[0].onended = hangUp;
+
+            } catch (err) {
+                 console.error("Failed to get local stream", err);
+                 placeholder.innerHTML = `<div class="text-red-400">Could not start. Please allow permissions.</div>`;
+                 createRoomBtn.disabled = false;
+                 createRoomBtn.innerHTML = '<span>Create Room</span>';
+                 return;
+            }
+
+            // 2. Setup Firestore and Signaling
             const roomDocRef = doc(collection(db, `artifacts/${appId}/public/data/rooms`));
             roomId = roomDocRef.id;
 
             const callerCandidatesCollection = collection(roomDocRef, 'callerCandidates');
-            
-            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
             pc.onicecandidate = e => e.candidate && addDoc(callerCandidatesCollection, e.candidate.toJSON());
-            pc.ontrack = handleRemoteTrack;
-
+            
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
             
@@ -351,24 +344,37 @@
 
         const joinRoom = async (joinRoomId) => {
             initializePeerConnection();
-            console.log(`Joining room: ${joinRoomId}`);
             roomId = joinRoomId;
             const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms`, roomId);
             const roomSnap = await getDoc(roomDocRef);
 
             if (!roomSnap.exists()) { placeholder.innerHTML = `<div class="text-red-400">Error: Room not found!</div>`; return; }
-            placeholder.innerHTML = `<div class="text-center text-gray-500"><i data-lucide="user-plus" class="w-24 h-24 mx-auto mb-4"></i><h2 class="text-2xl font-semibold">Joining room...</h2></div>`; lucide.createIcons();
+            placeholder.innerHTML = `<div class="text-center text-gray-500"><i data-lucide="user-plus" class="w-24 h-24 mx-auto mb-4"></i><h2 class="text-2xl font-semibold">Joining room...</h2></div>`;
+            lucide.createIcons();
             
-            await setupLocalMedia(false);
-            if (!localStream) return;
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                localStream = stream;
+                localVideo.srcObject = new MediaStream(stream.getVideoTracks());
+                stream.getTracks().forEach(track => pc.addTransceiver(track, { direction: 'sendrecv' }));
+                
+                localVideoContainer.classList.remove('hidden');
+                micBtn.disabled = false;
+                cameraBtn.disabled = false;
+                updateMicUI(true);
+                updateCameraUI(true);
+
+            } catch (err) {
+                 console.error("Failed to get local stream on guest", err);
+                 placeholder.innerHTML = `<div class="text-red-400">Could not join. Please allow camera/mic permissions.</div>`;
+                 return;
+            }
 
             const callerCandidatesCollection = collection(roomDocRef, 'callerCandidates');
             onSnapshot(callerCandidatesCollection, snap => snap.docChanges().forEach(c => c.type === 'added' && pc.addIceCandidate(new RTCIceCandidate(c.doc.data()))));
 
             const calleeCandidatesCollection = collection(roomDocRef, 'calleeCandidates');
-            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
             pc.onicecandidate = e => e.candidate && addDoc(calleeCandidatesCollection, e.candidate.toJSON());
-            pc.ontrack = handleRemoteTrack;
 
             await pc.setRemoteDescription(new RTCSessionDescription(roomSnap.data().offer));
             
@@ -383,38 +389,33 @@
             fullscreenBtn.classList.remove('hidden');
         };
         
-        function handleRemoteTrack(event) {
-            console.log('Remote track received:', event.track.kind);
-            if (!remoteStream) {
-                remoteStream = new MediaStream();
-            }
-
-            remoteStream.addTrack(event.track);
-
-            const screenTrack = remoteStream.getVideoTracks().find(t => 'displaySurface' in t.getSettings());
-            const cameraTrack = remoteStream.getVideoTracks().find(t => !('displaySurface' in t.getSettings()));
-
-            if (screenTrack) {
-                screenVideo.srcObject = new MediaStream([screenTrack]);
-                screenStatusDot.classList.add('active');
-            }
-
-            if (cameraTrack) {
-                remoteVideo.srcObject = new MediaStream([cameraTrack]);
-                remoteVideoContainer.classList.remove('hidden');
-                updateRemoteCamera(true);
-                cameraTrack.onmute = () => updateRemoteCamera(false);
-                cameraTrack.onunmute = () => updateRemoteCamera(true);
-            }
-
-            const audioTrack = remoteStream.getAudioTracks()[0];
-            if (audioTrack) {
+        function handleRemoteTrack({ track, streams }) {
+            console.log(`Received track: kind=${track.kind}, label=${track.label}, id=${track.id}`);
+            
+            // Heuristic to differentiate screen from camera
+            const isScreen = track.getSettings && track.getSettings().displaySurface;
+            
+            if (track.kind === 'video') {
+                if (isScreen) {
+                    console.log('Assigning to screen video element');
+                    screenVideo.srcObject = streams[0];
+                    screenStatusDot.classList.add('active');
+                } else {
+                    console.log('Assigning to remote camera element');
+                    remoteVideo.srcObject = streams[0];
+                    remoteVideoContainer.classList.remove('hidden');
+                    updateRemoteCamera(true);
+                    track.onmute = () => updateRemoteCamera(false);
+                    track.onunmute = () => updateRemoteCamera(true);
+                }
+            } else if (track.kind === 'audio') {
+                 console.log('Assigning to remote audio');
                 const remoteAudio = new Audio();
-                remoteAudio.srcObject = new MediaStream([audioTrack]);
+                remoteAudio.srcObject = streams[0];
                 remoteAudio.play();
                 updateRemoteMic(true);
-                audioTrack.onmute = () => updateRemoteMic(false);
-                audioTrack.onunmute = () => updateRemoteMic(true);
+                track.onmute = () => updateRemoteMic(false);
+                track.onunmute = () => updateRemoteMic(true);
             }
         }
 
@@ -424,12 +425,12 @@
             if (roomId) { 
                 try { 
                     const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms`, roomId);
-                    const callerCandidatesQuery = collection(roomDocRef, 'callerCandidates');
-                    const calleeCandidatesQuery = collection(roomDocRef, 'calleeCandidates');
+                    // Efficiently delete subcollections and the doc
                     const batch = writeBatch(db);
-                    const [callerSnaps, calleeSnaps] = await Promise.all([getDocs(callerCandidatesQuery), getDocs(calleeCandidatesQuery)]);
-                    callerSnaps.forEach(doc => batch.delete(doc.ref));
-                    calleeSnaps.forEach(doc => batch.delete(doc.ref));
+                    const callerCandidatesSnaps = await getDocs(collection(roomDocRef, 'callerCandidates'));
+                    callerCandidatesSnaps.forEach(doc => batch.delete(doc.ref));
+                    const calleeCandidatesSnaps = await getDocs(collection(roomDocRef, 'calleeCandidates'));
+                    calleeCandidatesSnaps.forEach(doc => batch.delete(doc.ref));
                     batch.delete(roomDocRef);
                     await batch.commit();
                 } catch(e){ console.error("Error cleaning up room:", e); } 
