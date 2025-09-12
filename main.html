@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Streamify - Collaborative Screen Sharing</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* --- Base Video Container Styles --- */
+        .video-container {
+            position: absolute;
+            border-radius: 0.75rem;
+            overflow: hidden;
+            border: 3px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+            transition: all 0.3s ease-in-out;
+            background-color: #374151;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #local-video-container {
+            bottom: 20px;
+            right: 20px;
+            width: 240px;
+            height: 180px;
+            resize: both;
+            cursor: move;
+            z-index: 100;
+        }
+        #remote-video-container {
+            top: 20px;
+            left: 20px;
+            width: 240px;
+            height: 180px;
+            border-color: #4f46e5;
+            z-index: 90;
+        }
+        .video-container:hover { border-color: #6366f1; }
+
+        /* --- Camera Off Size Adjustment --- */
+        .video-container.cam-off {
+            width: 120px;
+            height: 120px;
+        }
+
+        /* --- Video and Name Tag Styles --- */
+        .user-video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+            position: absolute;
+            top: 0; left: 0;
+        }
+        .name-tag {
+            position: absolute;
+            bottom: 6px;
+            left: 10px;
+            background-color: rgba(0,0,0,0.5);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            z-index: 2;
+        }
+
+        /* --- Mic Icon Styles --- */
+        .mic-status-icon {
+            position: absolute;
+            top: 8px;
+            left: 10px;
+            background-color: rgba(0,0,0,0.5);
+            border-radius: 50%;
+            padding: 4px;
+            z-index: 2;
+        }
+        
+        /* --- Animated Animal Avatar --- */
+        .animal-avatar {
+            width: 80%;
+            height: 80%;
+        }
+        .animal-avatar #body {
+            animation: breathing 3s ease-in-out infinite;
+        }
+        @keyframes breathing {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        /* --- General Status Dot --- */
+        .status-dot {
+            width: 10px; height: 10px; border-radius: 50%; display: inline-block;
+            margin-right: 8px; background-color: #ef4444; transition: background-color 0.3s ease;
+        }
+        .status-dot.active {
+            background-color: #22c55e; animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+        }
+        
+        /* --- Modal Styles --- */
+        .modal-backdrop {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.7); backdrop-filter: blur(8px);
+            display: flex; align-items: center; justify-content: center; z-index: 200;
+        }
+        .modal-content {
+            background-color: #1f2937; border-radius: 0.75rem; padding: 2rem;
+            width: 90%; max-width: 500px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex flex-col h-screen antialiased">
+
+    <!-- Header -->
+    <header class="bg-gray-800/50 backdrop-blur-sm border-b border-gray-700 p-4 shadow-lg z-10">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-2xl font-bold text-indigo-400">Streamify</h1>
+            <div class="flex items-center space-x-6 text-sm">
+                <div class="flex items-center"><span id="screen-status-dot" class="status-dot"></span> Screen</div>
+                <div class="flex items-center"><span id="cam-status-dot" class="status-dot"></span> Camera</div>
+                <div class="flex items-center"><span id="mic-status-dot" class="status-dot"></span> Mic</div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow container mx-auto p-4 md:p-8 flex items-center justify-center relative">
+        <div id="stream-container" class="w-full h-full bg-black rounded-xl border-2 border-dashed border-gray-700 flex flex-col items-center justify-center transition-all duration-300 relative">
+            <video id="screen-video" class="w-full h-full object-contain rounded-xl" autoplay playsinline></video>
+            <div id="placeholder" class="text-center text-gray-500">
+                <i data-lucide="users" class="w-24 h-24 mx-auto mb-4"></i>
+                <h2 class="text-2xl font-semibold">Welcome to Streamify</h2>
+                <p class="mt-2">Create a room to start sharing your screen.</p>
+            </div>
+            
+            <!-- Remote User's Container -->
+            <div id="remote-video-container" class="video-container hidden">
+                <div class="mic-status-icon"><i id="remote-mic-icon" data-lucide="mic" class="w-4 h-4 text-white"></i></div>
+                <div class="name-tag">Guest</div>
+                <video id="remote-video" class="user-video" autoplay playsinline></video>
+                <div id="remote-avatar" class="hidden">
+                    <!-- Animated Fox SVG -->
+                    <svg class="animal-avatar" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><g id="body"><path fill="#E67E22" d="M50 20 C 20 20, 20 60, 50 80 S 80 20, 50 20 Z" /><path fill="#FFFFFF" d="M50 50 C 40 60, 60 60, 50 50 L 35 30 L 65 30 Z" /><path fill="#FFFFFF" d="M35 30 C 25 20, 35 20, 35 30 Z" /><path fill="#FFFFFF" d="M65 30 C 75 20, 65 20, 65 30 Z" /></g><circle cx="40" cy="40" r="3" fill="black" /><circle cx="60" cy="40" r="3" fill="black" /><path d="M50 48 C 52 52, 48 52, 50 48" stroke="black" stroke-width="1" fill="none" /></svg>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Draggable Local Camera View -->
+        <div id="local-video-container" class="video-container hidden">
+            <div class="mic-status-icon"><i id="local-mic-icon" data-lucide="mic" class="w-4 h-4 text-white"></i></div>
+            <div class="name-tag">You</div>
+            <video id="local-video" class="user-video" autoplay playsinline muted></video>
+            <div id="local-avatar" class="hidden">
+                <!-- Animated Fox SVG -->
+                <svg class="animal-avatar" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><g id="body"><path fill="#E67E22" d="M50 20 C 20 20, 20 60, 50 80 S 80 20, 50 20 Z" /><path fill="#FFFFFF" d="M50 50 C 40 60, 60 60, 50 50 L 35 30 L 65 30 Z" /><path fill="#FFFFFF" d="M35 30 C 25 20, 35 20, 35 30 Z" /><path fill="#FFFFFF" d="M65 30 C 75 20, 65 20, 65 30 Z" /></g><circle cx="40" cy="40" r="3" fill="black" /><circle cx="60" cy="40" r="3" fill="black" /><path d="M50 48 C 52 52, 48 52, 50 48" stroke="black" stroke-width="1" fill="none" /></svg>
+            </div>
+        </div>
+    </main>
+
+    <!-- Controls Footer -->
+    <footer class="bg-gray-800/50 backdrop-blur-sm border-t border-gray-700 p-4 z-10">
+        <div class="container mx-auto flex items-center justify-center space-x-2 md:space-x-4">
+             <button id="create-room-btn" class="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all duration-200 transform hover:scale-105">
+                <i data-lucide="plus-square" class="w-5 h-5"></i>
+                <span>Create Room</span>
+            </button>
+            <button id="camera-btn" class="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                <i id="camera-icon" data-lucide="video" class="w-5 h-5"></i>
+                <span id="camera-text">Stop Camera</span>
+            </button>
+            <button id="mic-btn" class="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                <i id="mic-icon" data-lucide="mic" class="w-5 h-5"></i>
+                <span id="mic-text">Mute</span>
+            </button>
+             <button id="hangup-btn" class="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all duration-200 transform hover:scale-105 hidden">
+                <i data-lucide="phone-off" class="w-5 h-5"></i>
+                <span>End Call</span>
+            </button>
+        </div>
+    </footer>
+
+    <!-- Share Link Modal -->
+    <div id="share-modal" class="modal-backdrop hidden">
+         <div class="modal-content text-center">
+            <h3 class="text-2xl font-bold mb-4 text-white">Share this link to invite someone!</h3>
+            <p class="text-gray-400 mb-6">Once they join, the screen share will begin automatically.</p>
+            <div class="relative bg-gray-800 rounded-lg p-3 border border-gray-600">
+                <input id="share-link-input" type="text" class="w-full bg-transparent text-indigo-300 pr-12 focus:outline-none" readonly>
+                <button id="copy-link-btn" class="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg hover:bg-gray-700 transition">
+                    <i data-lucide="copy" class="w-5 h-5 text-gray-400"></i>
+                </button>
+            </div>
+             <p id="copy-success" class="text-green-400 mt-3 text-sm hidden">Link copied to clipboard!</p>
+             <button id="close-modal-btn" class="mt-6 w-full bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition">Close</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, collection, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase & App Setup
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        let db, auth;
+        try {
+            const app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+        } catch (e) { console.error("Firebase initialization failed:", e); document.body.innerHTML = '<div class="text-red-500 text-center p-8">Error: Could not connect to the backend.</div>'; return; }
+
+        if (initialAuthToken) { await signInWithCustomToken(auth, initialAuthToken); } else { await signInAnonymously(auth); }
+        
+        // DOM Elements
+        const screenVideo = document.getElementById('screen-video'), localVideo = document.getElementById('local-video'), remoteVideo = document.getElementById('remote-video');
+        const localVideoContainer = document.getElementById('local-video-container'), remoteVideoContainer = document.getElementById('remote-video-container');
+        const localAvatar = document.getElementById('local-avatar'), remoteAvatar = document.getElementById('remote-avatar');
+        const placeholder = document.getElementById('placeholder'), createRoomBtn = document.getElementById('create-room-btn');
+        const cameraBtn = document.getElementById('camera-btn'), micBtn = document.getElementById('mic-btn'), hangupBtn = document.getElementById('hangup-btn');
+        const shareModal = document.getElementById('share-modal'), shareLinkInput = document.getElementById('share-link-input');
+        const copyLinkBtn = document.getElementById('copy-link-btn'), closeModalBtn = document.getElementById('close-modal-btn'), copySuccess = document.getElementById('copy-success');
+        const screenStatusDot = document.getElementById('screen-status-dot'), camStatusDot = document.getElementById('cam-status-dot'), micStatusDot = document.getElementById('mic-status-dot');
+        const localMicIcon = document.getElementById('local-mic-icon'), remoteMicIcon = document.getElementById('remote-mic-icon');
+
+        // WebRTC & State
+        const servers = { iceServers: [{ urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }] };
+        let pc = new RTCPeerConnection(servers), localStream = null, remoteStream = null, roomId = null;
+
+        const setupLocalMedia = async (isHost) => {
+            if (isHost) {
+                const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always" } });
+                screenVideo.srcObject = screenStream;
+                screenStatusDot.classList.add('active');
+                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                screenStream.getTracks().forEach(track => localStream.addTrack(track));
+            } else {
+                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            }
+            localVideo.srcObject = localStream;
+            localVideoContainer.classList.remove('hidden');
+            micBtn.disabled = false;
+            cameraBtn.disabled = false;
+            toggleMic(true);
+            toggleCamera(false);
+        };
+        
+        // --- WebRTC Core Logic ---
+        const createRoom = async () => {
+            createRoomBtn.disabled = true;
+            createRoomBtn.innerHTML = '<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> Creating...';
+            lucide.createIcons();
+            
+            const roomRef = await addDoc(collection(db, `artifacts/${appId}/public/data/rooms`), {});
+            roomId = roomRef.id;
+            await setupLocalMedia(true);
+            
+            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+            pc.onicecandidate = e => e.candidate && addDoc(collection(roomRef, 'callerCandidates'), e.candidate.toJSON());
+            pc.ontrack = handleRemoteTrack;
+
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            await updateDoc(roomRef, { offer: { type: offer.type, sdp: offer.sdp } });
+            
+            onSnapshot(roomRef, snap => snap.data()?.answer && !pc.currentRemoteDescription && pc.setRemoteDescription(new RTCSessionDescription(snap.data().answer)));
+            onSnapshot(collection(roomRef, 'calleeCandidates'), snap => snap.docChanges().forEach(c => c.type === 'added' && pc.addIceCandidate(new RTCIceCandidate(c.doc.data()))));
+
+            shareLinkInput.value = `${window.location.href.split('?')[0]}?room=${roomId}`;
+            shareModal.classList.remove('hidden');
+            createRoomBtn.classList.add('hidden');
+            hangupBtn.classList.remove('hidden');
+            placeholder.classList.add('hidden');
+        };
+
+        const joinRoom = async (joinRoomId) => {
+            roomId = joinRoomId;
+            const roomRef = doc(db, `artifacts/${appId}/public/data/rooms`, roomId);
+            const roomSnap = await getDoc(roomRef);
+
+            if (!roomSnap.exists()) { placeholder.innerHTML = `<div class="text-red-400">Error: Room not found!</div>`; return; }
+            placeholder.innerHTML = `<div class="text-center text-gray-500"><i data-lucide="user-plus" class="w-24 h-24 mx-auto mb-4"></i><h2 class="text-2xl font-semibold">Joining room...</h2></div>`; lucide.createIcons();
+            
+            await setupLocalMedia(false);
+            
+            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+            pc.onicecandidate = e => e.candidate && addDoc(collection(roomRef, 'calleeCandidates'), e.candidate.toJSON());
+            pc.ontrack = handleRemoteTrack;
+
+            await pc.setRemoteDescription(new RTCSessionDescription(roomSnap.data().offer));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            await updateDoc(roomRef, { answer: { type: answer.type, sdp: answer.sdp } });
+            
+            onSnapshot(collection(roomRef, 'callerCandidates'), snap => snap.docChanges().forEach(c => c.type === 'added' && pc.addIceCandidate(new RTCIceCandidate(c.doc.data()))));
+
+            createRoomBtn.classList.add('hidden');
+            hangupBtn.classList.remove('hidden');
+            placeholder.classList.add('hidden');
+        };
+        
+        function handleRemoteTrack(event) {
+            const stream = event.streams[0];
+            const track = event.track;
+
+            if (track.kind === 'video') {
+                if (track.getSettings().displaySurface) {
+                    screenVideo.srcObject = stream;
+                    screenStatusDot.classList.add('active');
+                } else {
+                    remoteStream = stream;
+                    remoteVideo.srcObject = remoteStream;
+                    remoteVideoContainer.classList.remove('hidden');
+                    track.onunmute = () => updateRemoteCamera(true);
+                    track.onmute = () => updateRemoteCamera(false);
+                }
+            }
+             if (track.kind === 'audio') {
+                track.onunmute = () => updateRemoteMic(true);
+                track.onmute = () => updateRemoteMic(false);
+            }
+        }
+
+        const hangUp = async () => {
+            localStream?.getTracks().forEach(track => track.stop());
+            remoteStream?.getTracks().forEach(track => track.stop());
+            pc?.close();
+            if (roomId) { try { await deleteDoc(doc(db, `artifacts/${appId}/public/data/rooms`, roomId)); } catch(e){} }
+            window.location.reload();
+        };
+
+        // --- UI Control Functions ---
+        const toggleMic = (forceMute) => {
+            const audioTrack = localStream?.getAudioTracks()[0];
+            if (!audioTrack) return;
+            const isMuted = forceMute ?? !audioTrack.enabled;
+            audioTrack.enabled = !isMuted;
+            micBtn.querySelector('span').textContent = isMuted ? 'Unmute' : 'Mute';
+            micBtn.querySelector('i').outerHTML = `<i id="mic-icon" data-lucide="${isMuted ? 'mic-off' : 'mic'}" class="w-5 h-5"></i>`;
+            localMicIcon.outerHTML = `<i id="local-mic-icon" data-lucide="${isMuted ? 'mic-off' : 'mic'}" class="w-4 h-4 text-white"></i>`;
+            micStatusDot.classList.toggle('active', !isMuted);
+            lucide.createIcons();
+        };
+
+        const toggleCamera = (forceOff) => {
+            const videoTrack = localStream?.getVideoTracks().find(track => !track.getSettings().displaySurface);
+            if (!videoTrack) return;
+            const isOff = forceOff ?? !videoTrack.enabled;
+            videoTrack.enabled = !isOff;
+            cameraBtn.querySelector('span').textContent = isOff ? 'Start Camera' : 'Stop Camera';
+            cameraBtn.querySelector('i').outerHTML = `<i id="camera-icon" data-lucide="${isOff ? 'video' : 'video-off'}" class="w-5 h-5"></i>`;
+            localVideo.classList.toggle('hidden', isOff);
+            localAvatar.classList.toggle('hidden', !isOff);
+            localVideoContainer.classList.toggle('cam-off', isOff);
+            camStatusDot.classList.toggle('active', !isOff);
+            lucide.createIcons();
+        };
+        
+        const updateRemoteMic = (isUnmuted) => {
+            remoteMicIcon.outerHTML = `<i id="remote-mic-icon" data-lucide="${isUnmuted ? 'mic' : 'mic-off'}" class="w-4 h-4 text-white"></i>`;
+            lucide.createIcons();
+        }
+
+        const updateRemoteCamera = (isOn) => {
+            remoteVideo.classList.toggle('hidden', !isOn);
+            remoteAvatar.classList.toggle('hidden', isOn);
+            remoteVideoContainer.classList.toggle('cam-off', !isOn);
+        }
+
+        // --- Event Listeners ---
+        createRoomBtn.addEventListener('click', createRoom);
+        hangupBtn.addEventListener('click', hangUp);
+        micBtn.addEventListener('click', () => toggleMic());
+        cameraBtn.addEventListener('click', () => toggleCamera());
+        closeModalBtn.addEventListener('click', () => shareModal.classList.add('hidden'));
+        copyLinkBtn.addEventListener('click', () => {
+            shareLinkInput.select();
+            try { document.execCommand('copy'); copySuccess.classList.remove('hidden'); setTimeout(() => copySuccess.classList.add('hidden'), 2000); } catch (err) { alert('Failed to copy link.'); }
+        });
+
+        // --- Draggable Local Camera ---
+        let isDragging = false, initialX, initialY, xOffset = 0, yOffset = 0;
+        localVideoContainer.addEventListener("mousedown", e => { isDragging = true; initialX = e.clientX - xOffset; initialY = e.clientY - yOffset; });
+        document.addEventListener("mouseup", () => isDragging = false);
+        document.addEventListener("mousemove", e => { if (isDragging) { e.preventDefault(); xOffset = e.clientX - initialX; yOffset = e.clientY - initialY; localVideoContainer.style.transform = `translate3d(${xOffset}px, ${yOffset}px, 0)`; }});
+
+        // --- Page Load Logic ---
+        window.addEventListener('load', () => {
+            lucide.createIcons();
+            const joinRoomId = new URLSearchParams(window.location.search).get('room');
+            if (joinRoomId) { joinRoom(joinRoomId).catch(console.error); }
+        });
+
+    </script>
+</body>
+</html>
+
