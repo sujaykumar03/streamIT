@@ -94,9 +94,9 @@
                 <video id="local-video" class="user-video" autoplay playsinline muted></video>
                 <div id="local-avatar" class="hidden">
                     <svg class="animal-avatar" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><g id="body"><path fill="#E67E22" d="M50 20 C 20 20, 20 60, 50 80 S 80 20, 50 20 Z" /><path fill="#FFFFFF" d="M50 50 C 40 60, 60 60, 50 50 L 35 30 L 65 30 Z" /><path fill="#FFFFFF" d="M35 30 C 25 20, 35 20, 35 30 Z" /><path fill="#FFFFFF" d="M65 30 C 75 20, 65 20, 65 30 Z" /></g><circle cx="40" cy="40" r="3" fill="black" /><circle cx="60" cy="40" r="3" fill="black" /><path d="M50 48 C 52 52, 48 52, 50 48" stroke="black" stroke-width="1" fill="none" /></svg>
+                    </div>
                 </div>
             </div>
-        </div>
     </main>
 
     <!-- Controls Footer -->
@@ -177,6 +177,9 @@
         const statusIndicators = document.getElementById('status-indicators');
         const screenStatusDot = document.getElementById('screen-status-dot'), camStatusDot = document.getElementById('cam-status-dot'), micStatusDot = document.getElementById('mic-status-dot');
         const fullscreenBtn = document.getElementById('fullscreen-btn');
+        const localAvatar = document.getElementById('local-avatar');
+        const remoteAvatar = document.getElementById('remote-avatar');
+
 
         // --- WebRTC & State ---
         let pc;
@@ -211,17 +214,11 @@
                 stream.getTracks().forEach(track => pc.addTransceiver(track, { direction: 'sendrecv' }));
                 updateMicUI(true);
                 updateCameraUI(true);
-            } catch (err) {
-                 placeholder.innerHTML = `<div class="text-red-400">Camera/Mic permissions are required to create a room. Please allow access and try again.</div>`;
-                 return;
-            }
 
-            try {
                 const roomDocRef = doc(collection(db, `artifacts/${appId}/public/data/rooms`));
                 roomId = roomDocRef.id;
-
-                // FIX: Populate the link as soon as we have the ID
-                shareLinkInput.value = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
+                
+                shareLinkInput.value = `${window.location.href.split('?')[0]}?room=${roomId}`;
 
                 const callerCandidatesCollection = collection(roomDocRef, 'callerCandidates');
                 pc.onicecandidate = e => e.candidate && addDoc(callerCandidatesCollection, e.candidate.toJSON());
@@ -238,9 +235,10 @@
 
                 const calleeCandidatesCollection = collection(roomDocRef, 'calleeCandidates');
                 onSnapshot(calleeCandidatesCollection, snap => snap.docChanges().forEach(c => c.type === 'added' && pc.addIceCandidate(new RTCIceCandidate(c.doc.data()))));
+
             } catch (err) {
-                console.error("Error creating room and setting up signaling:", err);
-                placeholder.innerHTML = `<div class="text-red-400">Could not create room due to a connection error. Please try again.</div>`;
+                console.error("Error during room creation process:", err);
+                placeholder.innerHTML = `<div class="text-red-400 p-4 text-center"><strong>Failed to Create Room</strong><br>Please allow camera/mic permissions and try again. If the issue persists, check the browser console for errors.</div>`;
             }
         };
 
@@ -248,7 +246,7 @@
             initializePeerConnection();
             switchToInCallView();
             roomId = joinRoomId;
-            shareScreenBtn.classList.add('hidden'); // Guests can't share screens
+            shareScreenBtn.classList.add('hidden');
 
             const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms`, roomId);
             const roomSnap = await getDoc(roomDocRef);
@@ -265,7 +263,7 @@
                 updateMicUI(true);
                 updateCameraUI(true);
             } catch (err) {
-                 placeholder.innerHTML = `<div class="text-red-400">Camera/Mic permissions are required to join.</div>`;
+                 placeholder.innerHTML = `<div class="text-red-400">Camera/Mic permissions required to join.</div>`;
                  return;
             }
 
@@ -283,9 +281,8 @@
         
         function handleRemoteTrack({ track }) {
             placeholder.classList.add('hidden');
-            if (!remoteStream) {
-                remoteStream = new MediaStream();
-            }
+            if (!remoteStream) remoteStream = new MediaStream();
+            
             remoteStream.addTrack(track);
 
             const screenVideoTrack = remoteStream.getVideoTracks().find(t => 'displaySurface' in t.getSettings());
@@ -343,6 +340,8 @@
             cameraBtn.querySelector('span').textContent = isEnabled ? 'Stop Camera' : 'Start Camera';
             cameraBtn.querySelector('i').outerHTML = `<i id="camera-icon" data-lucide="${isEnabled ? 'video' : 'video-off'}" class="w-5 h-5"></i>`;
             localVideo.classList.toggle('hidden', !isEnabled);
+            localAvatar.classList.toggle('hidden', isEnabled);
+            localVideoContainer.classList.toggle('cam-off', !isEnabled);
             camStatusDot.classList.toggle('active', isEnabled);
             lucide.createIcons();
         };
@@ -365,6 +364,7 @@
         
         const updateRemoteCamera = (isOn) => {
             remoteVideo.classList.toggle('hidden', !isOn);
+            remoteAvatar.classList.toggle('hidden', isOn);
             remoteVideoContainer.classList.toggle('cam-off', !isOn);
         };
         
