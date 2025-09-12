@@ -254,7 +254,7 @@
 
         // --- WebRTC & State ---
         const servers = { iceServers: [{ urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }] };
-        let pc = new RTCPeerConnection(servers);
+        let pc; // Will be initialized before each call
         let localStream = null;
         let roomId = null;
 
@@ -292,6 +292,8 @@
         
         // --- WebRTC Core Logic ---
         const createRoom = async () => {
+            console.log('Creating room...');
+            pc = new RTCPeerConnection(servers); // Create a fresh connection object
             createRoomBtn.disabled = true;
             createRoomBtn.innerHTML = '<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> Creating...';
             lucide.createIcons();
@@ -301,27 +303,40 @@
 
             const roomDocRef = doc(collection(db, `artifacts/${appId}/public/data/rooms`));
             roomId = roomDocRef.id;
+            console.log(`Room created with ID: ${roomId}`);
 
             const callerCandidatesCollection = collection(roomDocRef, 'callerCandidates');
             
             localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-            pc.onicecandidate = e => e.candidate && addDoc(callerCandidatesCollection, e.candidate.toJSON());
+            pc.onicecandidate = e => {
+                if (e.candidate) {
+                    console.log('Host: Found ICE candidate', e.candidate);
+                    addDoc(callerCandidatesCollection, e.candidate.toJSON());
+                }
+            };
             pc.ontrack = handleRemoteTrack;
 
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
+            console.log('Host: Offer created and local description set');
             
             await setDoc(roomDocRef, { offer: { type: offer.type, sdp: offer.sdp } });
             
             onSnapshot(roomDocRef, snap => {
                 const data = snap.data();
                 if (data?.answer && !pc.currentRemoteDescription) {
+                    console.log('Host: Received answer');
                     pc.setRemoteDescription(new RTCSessionDescription(data.answer));
                 }
             });
 
             const calleeCandidatesCollection = collection(roomDocRef, 'calleeCandidates');
-            onSnapshot(calleeCandidatesCollection, snap => snap.docChanges().forEach(c => c.type === 'added' && pc.addIceCandidate(new RTCIceCandidate(c.doc.data()))));
+            onSnapshot(calleeCandidatesCollection, snap => snap.docChanges().forEach(c => {
+                if (c.type === 'added') {
+                    console.log('Host: Received ICE candidate from guest');
+                    pc.addIceCandidate(new RTCIceCandidate(c.doc.data()));
+                }
+            }));
 
             shareLinkInput.value = `${window.location.href.split('?')[0]}?room=${roomId}`;
             shareLinkContainer.classList.remove('hidden');
@@ -332,6 +347,8 @@
         };
 
         const joinRoom = async (joinRoomId) => {
+            console.log(`Joining room: ${joinRoomId}`);
+            pc = new RTCPeerConnection(servers); // Create a fresh connection object
             roomId = joinRoomId;
             const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms`, roomId);
             const roomSnap = await getDoc(roomDocRef);
@@ -339,9 +356,13 @@
             if (!roomSnap.exists()) { placeholder.innerHTML = `<div class="text-red-400">Error: Room not found!</div>`; return; }
             placeholder.innerHTML = `<div class="text-center text-gray-500"><i data-lucide="user-plus" class="w-24 h-24 mx-auto mb-4"></i><h2 class="text-2xl font-semibold">Joining room...</h2></div>`; lucide.createIcons();
             
-            // FIX: Set up listener for host's candidates BEFORE sending the answer to prevent race condition
             const callerCandidatesCollection = collection(roomDocRef, 'callerCandidates');
-            onSnapshot(callerCandidatesCollection, snap => snap.docChanges().forEach(c => c.type === 'added' && pc.addIceCandidate(new RTCIceCandidate(c.doc.data()))));
+            onSnapshot(callerCandidatesCollection, snap => snap.docChanges().forEach(c => {
+                if (c.type === 'added') {
+                    console.log('Guest: Received ICE candidate from host');
+                    pc.addIceCandidate(new RTCIceCandidate(c.doc.data()));
+                }
+            }));
 
             await setupLocalMedia(false);
             if (!localStream) return;
@@ -349,12 +370,21 @@
             const calleeCandidatesCollection = collection(roomDocRef, 'calleeCandidates');
             
             localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-            pc.onicecandidate = e => e.candidate && addDoc(calleeCandidatesCollection, e.candidate.toJSON());
+            pc.onicecandidate = e => {
+                if(e.candidate) {
+                    console.log('Guest: Found ICE candidate', e.candidate);
+                    addDoc(calleeCandidatesCollection, e.candidate.toJSON());
+                }
+            };
             pc.ontrack = handleRemoteTrack;
 
             await pc.setRemoteDescription(new RTCSessionDescription(roomSnap.data().offer));
+            console.log('Guest: Remote description (offer) set');
+            
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
+            console.log('Guest: Answer created and local description set');
+
             await updateDoc(roomDocRef, { answer: { type: answer.type, sdp: answer.sdp } });
 
             createRoomBtn.classList.add('hidden');
@@ -364,13 +394,16 @@
         };
         
         function handleRemoteTrack(event) {
+            console.log('Received remote track:', event.track.kind);
             const track = event.track;
             if (track.kind === 'video') {
                 const isScreenTrack = 'displaySurface' in track.getSettings();
                 if (isScreenTrack) {
+                    console.log('...it is a screen track.');
                     screenVideo.srcObject = new MediaStream([track]);
                     screenStatusDot.classList.add('active');
                 } else {
+                    console.log('...it is a camera track.');
                     remoteVideo.srcObject = new MediaStream([track]);
                     remoteVideoContainer.classList.remove('hidden');
                     updateRemoteCamera(true);
@@ -379,6 +412,7 @@
                 }
             }
              if (track.kind === 'audio') {
+                console.log('...it is an audio track.');
                 const remoteAudio = new Audio();
                 remoteAudio.srcObject = new MediaStream([track]);
                 remoteAudio.play();
@@ -418,7 +452,6 @@
 
         const updateCameraUI = (isEnabled) => {
             cameraBtn.querySelector('span').textContent = isEnabled ? 'Stop Camera' : 'Start Camera';
-            // FIX: Correctly map isEnabled to the icon state
             cameraBtn.querySelector('i').outerHTML = `<i id="camera-icon" data-lucide="${isEnabled ? 'video' : 'video-off'}" class="w-5 h-5"></i>`;
             localVideo.classList.toggle('hidden', !isEnabled);
             localAvatar.classList.toggle('hidden', isEnabled);
