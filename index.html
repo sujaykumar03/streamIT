@@ -211,7 +211,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, updateDoc, onSnapshot, collection, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, updateDoc, onSnapshot, collection, addDoc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- Firebase & App Setup ---
         const firebaseConfig = {
@@ -272,7 +272,6 @@
                     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
                 }
                 
-                // Use a separate stream for the local video preview to prevent seeing the screen share in the small box
                 const localPreviewStream = new MediaStream(localStream.getVideoTracks().filter(t => t.kind === 'video' && !t.getSettings().displaySurface));
                 localVideo.srcObject = localPreviewStream;
                 
@@ -280,14 +279,15 @@
                 micBtn.disabled = false;
                 cameraBtn.disabled = false;
                 
-                // Set initial states correctly
                 updateMicUI(true);
                 updateCameraUI(true);
 
             } catch (error) {
                 console.error("Error accessing media devices.", error);
                 placeholder.innerHTML = `<div class="text-red-400">Could not start. Please allow camera, mic, and screen permissions.</div>`;
-                hangUp();
+                createRoomBtn.disabled = false;
+                createRoomBtn.innerHTML = '<span>Create Room</span><i data-lucide="plus-square" class="w-5 h-5"></i>';
+                lucide.createIcons();
             }
         };
         
@@ -298,10 +298,9 @@
             lucide.createIcons();
             
             await setupLocalMedia(true);
-            if (!localStream) return; // Stop if user cancelled media selection
+            if (!localStream) return;
 
-            const roomRef = collection(db, `artifacts/${appId}/public/data/rooms`);
-            const roomDocRef = await addDoc(roomRef, {});
+            const roomDocRef = doc(collection(db, `artifacts/${appId}/public/data/rooms`));
             roomId = roomDocRef.id;
 
             const callerCandidatesCollection = collection(roomDocRef, 'callerCandidates');
@@ -312,9 +311,16 @@
 
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
-            await updateDoc(roomDocRef, { offer: { type: offer.type, sdp: offer.sdp } });
             
-            onSnapshot(roomDocRef, snap => snap.data()?.answer && !pc.currentRemoteDescription && pc.setRemoteDescription(new RTCSessionDescription(snap.data().answer)));
+            // Using setDoc here to create the document initially with the offer
+            await setDoc(roomDocRef, { offer: { type: offer.type, sdp: offer.sdp } });
+            
+            onSnapshot(roomDocRef, snap => {
+                const data = snap.data();
+                if (data?.answer && !pc.currentRemoteDescription) {
+                    pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+                }
+            });
 
             const calleeCandidatesCollection = collection(roomDocRef, 'calleeCandidates');
             onSnapshot(calleeCandidatesCollection, snap => snap.docChanges().forEach(c => c.type === 'added' && pc.addIceCandidate(new RTCIceCandidate(c.doc.data()))));
@@ -366,16 +372,18 @@
                 } else {
                     remoteVideo.srcObject = new MediaStream([track]);
                     remoteVideoContainer.classList.remove('hidden');
-                    track.onunmute = () => updateRemoteCamera(true);
+                    updateRemoteCamera(true);
                     track.onmute = () => updateRemoteCamera(false);
+                    track.onunmute = () => updateRemoteCamera(true);
                 }
             }
              if (track.kind === 'audio') {
                 const remoteAudio = new Audio();
                 remoteAudio.srcObject = new MediaStream([track]);
                 remoteAudio.play();
-                track.onunmute = () => updateRemoteMic(true);
+                updateRemoteMic(true);
                 track.onmute = () => updateRemoteMic(false);
+                track.onunmute = () => updateRemoteMic(true);
             }
         }
 
@@ -385,8 +393,21 @@
             if (roomId) { 
                 try { 
                     const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms`, roomId);
-                    await deleteDoc(roomDocRef); 
-                } catch(e){} 
+                    const callerCandidatesQuery = collection(roomDocRef, 'callerCandidates');
+                    const calleeCandidatesQuery = collection(roomDocRef, 'calleeCandidates');
+                    
+                    const batch = writeBatch(db);
+                    
+                    const callerSnaps = await getDocs(callerCandidatesQuery);
+                    callerSnaps.forEach(doc => batch.delete(doc.ref));
+                    
+                    const calleeSnaps = await getDocs(calleeCandidatesQuery);
+                    calleeSnaps.forEach(doc => batch.delete(doc.ref));
+
+                    batch.delete(roomDocRef);
+                    await batch.commit();
+
+                } catch(e){ console.error("Error cleaning up room:", e); } 
             }
             window.location.href = window.location.href.split('?')[0];
         };
@@ -413,18 +434,14 @@
         const toggleMic = () => {
             const audioTrack = localStream?.getAudioTracks()[0];
             if (!audioTrack) return;
-            // Toggle the enabled state
             audioTrack.enabled = !audioTrack.enabled;
-            // Update the UI to reflect the new state
             updateMicUI(audioTrack.enabled);
         };
 
         const toggleCamera = () => {
             const videoTrack = localStream?.getVideoTracks().find(track => !('displaySurface' in track.getSettings()));
             if (!videoTrack) return;
-            // Toggle the enabled state
             videoTrack.enabled = !videoTrack.enabled;
-            // Update the UI to reflect the new state
             updateCameraUI(videoTrack.enabled);
         };
         
@@ -460,7 +477,10 @@
         window.addEventListener('load', () => {
             lucide.createIcons();
             const joinRoomId = new URLSearchParams(window.location.search).get('room');
-            if (joinRoomId) { joinRoom(joinRoomId).catch(console.error); }
+            if (joinRoomId) {
+                createRoomBtn.style.display = 'none'; // Hide create button if joining
+                joinRoom(joinRoomId).catch(console.error);
+            }
         });
     </script>
 </body>
