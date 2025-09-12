@@ -213,12 +213,13 @@
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, updateDoc, onSnapshot, collection, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Firebase & App Setup
+        // --- Firebase & App Setup ---
+        // Ensure this configuration object is copied exactly from your Firebase project settings
         const firebaseConfig = {
             apiKey: "AIzaSyBMowosdHk3qp9cBSnc_M1uul7VLjJpJj4",
             authDomain: "streamit-d7e89.firebaseapp.com",
             projectId: "streamit-d7e89",
-           storageBucket: "streamit-d7e89.firebasestorage.app", // Corrected storage bucket format
+            storageBucket: "streamit-d7e89.firebasestorage.app", // This was the critical fix
             messagingSenderId: "770140743500",
             appId: "1:770140743500:web:4d041b6c923687022711e9",
             measurementId: "G-JPC9ZHKVR3"
@@ -227,6 +228,7 @@
         let db, auth, app;
         const appId = firebaseConfig.projectId;
 
+        // Initialize Firebase and sign in the user anonymously
         try {
             app = initializeApp(firebaseConfig);
             db = getFirestore(app);
@@ -235,10 +237,11 @@
         } catch (e) {
             console.error("Firebase initialization failed:", e);
             document.body.innerHTML = '<div class="text-red-500 text-center p-8">Error: Could not connect to the backend. Verify Firebase config and permissions.</div>';
-            return;
+            // Stop script execution if Firebase fails
+            throw new Error("Firebase initialization failed.");
         }
         
-        // DOM Elements
+        // --- DOM Elements ---
         const screenVideo = document.getElementById('screen-video'), localVideo = document.getElementById('local-video'), remoteVideo = document.getElementById('remote-video');
         const localVideoContainer = document.getElementById('local-video-container'), remoteVideoContainer = document.getElementById('remote-video-container');
         const localAvatar = document.getElementById('local-avatar'), remoteAvatar = document.getElementById('remote-avatar');
@@ -249,17 +252,21 @@
         const screenStatusDot = document.getElementById('screen-status-dot'), camStatusDot = document.getElementById('cam-status-dot'), micStatusDot = document.getElementById('mic-status-dot');
         const localMicIcon = document.getElementById('local-mic-icon'), remoteMicIcon = document.getElementById('remote-mic-icon');
 
-        // WebRTC & State
+        // --- WebRTC & State ---
         const servers = { iceServers: [{ urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }] };
-        let pc = new RTCPeerConnection(servers), localStream = null, remoteStream = null, roomId = null;
+        let pc = new RTCPeerConnection(servers);
+        let localStream = null;
+        let remoteStream = null;
+        let roomId = null;
 
         const setupLocalMedia = async (isHost) => {
             if (isHost) {
                 const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always" } });
                 screenVideo.srcObject = screenStream;
                 screenStatusDot.classList.add('active');
-                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                screenStream.getTracks().forEach(track => localStream.addTrack(track));
+                
+                const userMedia = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                localStream = new MediaStream([...userMedia.getTracks(), ...screenStream.getTracks()]);
             } else {
                 localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
             }
@@ -334,29 +341,29 @@
             placeholder.classList.add('hidden');
         };
         
+        // --- PERFECTED: This function now handles tracks individually for stability ---
         function handleRemoteTrack(event) {
-            const stream = event.streams[0];
             const track = event.track;
 
             if (track.kind === 'video') {
                 const isScreenTrack = 'displaySurface' in track.getSettings();
                 if (isScreenTrack) {
+                    // Assign the screen sharing track to the main video element
                     screenVideo.srcObject = new MediaStream([track]);
                     screenStatusDot.classList.add('active');
                 } else {
-                    remoteStream = new MediaStream([track]);
-                    remoteVideo.srcObject = remoteStream;
+                    // Assign the remote user's camera to the picture-in-picture element
+                    remoteVideo.srcObject = new MediaStream([track]);
                     remoteVideoContainer.classList.remove('hidden');
                     track.onunmute = () => updateRemoteCamera(true);
                     track.onmute = () => updateRemoteCamera(false);
                 }
             }
              if (track.kind === 'audio') {
-                // To avoid multiple audio contexts, just use the main stream
-                const remoteAudioStream = new MediaStream([track]);
-                const audioPlayer = new Audio();
-                audioPlayer.srcObject = remoteAudioStream;
-                audioPlayer.play();
+                // Create a new audio element to play the remote user's audio
+                const remoteAudio = new Audio();
+                remoteAudio.srcObject = new MediaStream([track]);
+                remoteAudio.play();
 
                 track.onunmute = () => updateRemoteMic(true);
                 track.onmute = () => updateRemoteMic(false);
@@ -365,36 +372,46 @@
 
         const hangUp = async () => {
             localStream?.getTracks().forEach(track => track.stop());
-            remoteStream?.getTracks().forEach(track => track.stop());
             pc?.close();
-            if (roomId) { try { await deleteDoc(doc(db, `artifacts/${appId}/public/data/rooms`, roomId)); } catch(e){} }
+            if (roomId) { 
+                try { 
+                    const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms`, roomId);
+                    await deleteDoc(roomDocRef); 
+                } catch(e){
+                    console.error("Error deleting room:", e);
+                } 
+            }
             window.location.reload();
         };
 
         // --- UI Control Functions ---
-        const toggleMic = (forceMute) => {
+        const toggleMic = (forceState) => {
             const audioTrack = localStream?.getAudioTracks()[0];
             if (!audioTrack) return;
-            const isMuted = forceMute ?? audioTrack.enabled;
-            audioTrack.enabled = !isMuted;
-            micBtn.querySelector('span').textContent = isMuted ? 'Unmute' : 'Mute';
-            micBtn.querySelector('i').outerHTML = `<i id="mic-icon" data-lucide="${isMuted ? 'mic-off' : 'mic'}" class="w-5 h-5"></i>`;
-            localMicIcon.outerHTML = `<i id="local-mic-icon" data-lucide="${isMuted ? 'mic-off' : 'mic'}" class="w-4 h-4 text-white"></i>`;
-            micStatusDot.classList.toggle('active', !isMuted);
+            const currentlyEnabled = audioTrack.enabled;
+            const shouldBeEnabled = forceState === undefined ? !currentlyEnabled : forceState;
+            audioTrack.enabled = shouldBeEnabled;
+
+            micBtn.querySelector('span').textContent = shouldBeEnabled ? 'Mute' : 'Unmute';
+            micBtn.querySelector('i').outerHTML = `<i id="mic-icon" data-lucide="${shouldBeEnabled ? 'mic' : 'mic-off'}" class="w-5 h-5"></i>`;
+            localMicIcon.outerHTML = `<i id="local-mic-icon" data-lucide="${shouldBeEnabled ? 'mic' : 'mic-off'}" class="w-4 h-4 text-white"></i>`;
+            micStatusDot.classList.toggle('active', shouldBeEnabled);
             lucide.createIcons();
         };
 
-        const toggleCamera = (forceOff) => {
+        const toggleCamera = (forceState) => {
             const videoTrack = localStream?.getVideoTracks().find(track => !('displaySurface' in track.getSettings()));
             if (!videoTrack) return;
-            const isOff = forceOff ?? videoTrack.enabled;
-            videoTrack.enabled = !isOff;
-            cameraBtn.querySelector('span').textContent = isOff ? 'Start Camera' : 'Stop Camera';
-            cameraBtn.querySelector('i').outerHTML = `<i id="camera-icon" data-lucide="${isOff ? 'video-off' : 'video'}" class="w-5 h-5"></i>`;
-            localVideo.classList.toggle('hidden', isOff);
-            localAvatar.classList.toggle('hidden', !isOff);
-            localVideoContainer.classList.toggle('cam-off', isOff);
-            camStatusDot.classList.toggle('active', !isOff);
+            const currentlyEnabled = videoTrack.enabled;
+            const shouldBeEnabled = forceState === undefined ? !currentlyEnabled : forceState;
+            videoTrack.enabled = shouldBeEnabled;
+            
+            cameraBtn.querySelector('span').textContent = shouldBeEnabled ? 'Stop Camera' : 'Start Camera';
+            cameraBtn.querySelector('i').outerHTML = `<i id="camera-icon" data-lucide="${shouldBeEnabled ? 'video' : 'video-off'}" class="w-5 h-5"></i>`;
+            localVideo.classList.toggle('hidden', !shouldBeEnabled);
+            localAvatar.classList.toggle('hidden', shouldBeEnabled);
+            localVideoContainer.classList.toggle('cam-off', !shouldBeEnabled);
+            camStatusDot.classList.toggle('active', shouldBeEnabled);
             lucide.createIcons();
         };
         
