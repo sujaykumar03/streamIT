@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale-1.0">
     <title>Streamify - Collaborative Screen Sharing</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -288,11 +288,9 @@
 
                 localStream = new MediaStream([...stream.getTracks(), ...screenStream.getTracks()]);
                 
-                // Display local streams
                 localVideo.srcObject = new MediaStream(stream.getVideoTracks());
                 screenVideo.srcObject = screenStream;
 
-                // Add transceivers for each track
                 stream.getTracks().forEach(track => pc.addTransceiver(track, { direction: 'sendrecv' }));
                 screenStream.getTracks().forEach(track => pc.addTransceiver(track, { direction: 'sendonly' }));
                 
@@ -306,10 +304,12 @@
 
             } catch (err) {
                  console.error("Failed to get local stream", err);
-                 placeholder.innerHTML = `<div class="text-red-400">Could not start. Please allow permissions.</div>`;
+                 placeholder.innerHTML = `<div class="text-red-400 p-4 text-center">Permissions Denied. <br> Please allow camera, microphone, and screen sharing to continue.</div>`;
+                 // FIX: Reset the button so the user can try again
                  createRoomBtn.disabled = false;
-                 createRoomBtn.innerHTML = '<span>Create Room</span>';
-                 return;
+                 createRoomBtn.innerHTML = '<i data-lucide="plus-square" class="w-5 h-5"></i><span>Create Room</span>';
+                 lucide.createIcons();
+                 return; // IMPORTANT: Stop execution here
             }
 
             // 2. Setup Firestore and Signaling
@@ -390,28 +390,25 @@
         };
         
         function handleRemoteTrack({ track, streams }) {
-            console.log(`Received track: kind=${track.kind}, label=${track.label}, id=${track.id}`);
-            
-            // Heuristic to differentiate screen from camera
-            const isScreen = track.getSettings && track.getSettings().displaySurface;
+            const stream = streams[0];
+            if (!stream) return;
+
+            const isScreen = 'displaySurface' in track.getSettings();
             
             if (track.kind === 'video') {
+                const videoEl = isScreen ? screenVideo : remoteVideo;
+                videoEl.srcObject = stream;
                 if (isScreen) {
-                    console.log('Assigning to screen video element');
-                    screenVideo.srcObject = streams[0];
                     screenStatusDot.classList.add('active');
                 } else {
-                    console.log('Assigning to remote camera element');
-                    remoteVideo.srcObject = streams[0];
                     remoteVideoContainer.classList.remove('hidden');
                     updateRemoteCamera(true);
                     track.onmute = () => updateRemoteCamera(false);
                     track.onunmute = () => updateRemoteCamera(true);
                 }
             } else if (track.kind === 'audio') {
-                 console.log('Assigning to remote audio');
                 const remoteAudio = new Audio();
-                remoteAudio.srcObject = streams[0];
+                remoteAudio.srcObject = stream;
                 remoteAudio.play();
                 updateRemoteMic(true);
                 track.onmute = () => updateRemoteMic(false);
@@ -425,7 +422,6 @@
             if (roomId) { 
                 try { 
                     const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms`, roomId);
-                    // Efficiently delete subcollections and the doc
                     const batch = writeBatch(db);
                     const callerCandidatesSnaps = await getDocs(collection(roomDocRef, 'callerCandidates'));
                     callerCandidatesSnaps.forEach(doc => batch.delete(doc.ref));
