@@ -275,9 +275,6 @@
             await updateDoc(roomDocRef, { answer: { type: answer.type, sdp: answer.sdp } });
         };
         
-        const shareScreen = async () => { /* ... see below for implementation ... */ };
-        const stopSharingScreen = () => { /* ... see below for implementation ... */ };
-
         function handleRemoteTrack({ track }) {
             placeholder.classList.add('hidden');
             if (!remoteStream) {
@@ -297,27 +294,89 @@
             if (cameraVideoTrack && !remoteVideo.srcObject) {
                 remoteVideo.srcObject = new MediaStream([cameraVideoTrack]);
                 remoteVideoContainer.classList.remove('hidden');
-                cameraVideoTrack.onunmute = () => updateRemoteCamera(true);
-                cameraVideoTrack.onmute = () => updateRemoteCamera(false);
+                updateRemoteCamera(true);
+                track.onunmute = () => updateRemoteCamera(true);
+                track.onmute = () => updateRemoteCamera(false);
             }
 
             if (remoteStream.getAudioTracks().length > 0 && !remoteAudio.srcObject) {
                 remoteAudio.srcObject = new MediaStream(remoteStream.getAudioTracks());
                 const audioTrack = remoteStream.getAudioTracks()[0];
-                audioTrack.onunmute = () => updateRemoteMic(true);
-                audioTrack.onmute = () => updateRemoteMic(false);
+                updateRemoteMic(true);
+                track.onunmute = () => updateRemoteMic(true);
+                track.onmute = () => updateRemoteMic(false);
             }
         }
 
-        const hangUp = async () => { /* ... same as before ... */ };
+        const hangUp = async () => {
+            localStream?.getTracks().forEach(track => track.stop());
+            pc?.close();
+            if (roomId) {
+                try {
+                    const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms`, roomId);
+                    const batch = writeBatch(db);
+                    const callerSnaps = await getDocs(collection(roomDocRef, 'callerCandidates'));
+                    callerSnaps.forEach(d => batch.delete(d.ref));
+                    const calleeSnaps = await getDocs(collection(roomDocRef, 'calleeCandidates'));
+                    calleeSnaps.forEach(d => batch.delete(d.ref));
+                    batch.delete(roomDocRef);
+                    await batch.commit();
+                } catch (e) {}
+            }
+            window.location.href = window.location.href.split('?')[0];
+        };
 
-        // --- UI Control & Event Listeners ---
-        const updateMicUI = (isEnabled) => { /* ... same as before ... */ };
-        const updateCameraUI = (isEnabled) => { /* ... same as before ... */ };
-        const toggleMic = () => { /* ... same as before ... */ };
-        const toggleCamera = () => { /* ... same as before ... */ };
-        const updateRemoteCamera = (isOn) => { /* ... same as before ... */ };
-        const updateRemoteMic = (isUnmuted) => { /* ... same as before ... */ };
+        const updateMicUI = (isEnabled) => {
+            micBtn.querySelector('span').textContent = isEnabled ? 'Mute' : 'Unmute';
+            micBtn.querySelector('i').outerHTML = `<i id="mic-icon" data-lucide="${isEnabled ? 'mic' : 'mic-off'}" class="w-5 h-5"></i>`;
+            micStatusDot.classList.toggle('active', isEnabled);
+            lucide.createIcons();
+        };
+
+        const updateCameraUI = (isEnabled) => {
+            cameraBtn.querySelector('span').textContent = isEnabled ? 'Stop Camera' : 'Start Camera';
+            cameraBtn.querySelector('i').outerHTML = `<i id="camera-icon" data-lucide="${isEnabled ? 'video' : 'video-off'}" class="w-5 h-5"></i>`;
+            localVideo.classList.toggle('hidden', !isEnabled);
+            camStatusDot.classList.toggle('active', isEnabled);
+            lucide.createIcons();
+        };
+        
+        const toggleMic = () => {
+            const track = localStream?.getAudioTracks()[0];
+            if(track) {
+                track.enabled = !track.enabled;
+                updateMicUI(track.enabled);
+            }
+        };
+
+        const toggleCamera = () => {
+            const track = localStream?.getVideoTracks()[0];
+            if(track) {
+                track.enabled = !track.enabled;
+                updateCameraUI(track.enabled);
+            }
+        };
+        
+        const updateRemoteCamera = (isOn) => {
+            remoteVideo.classList.toggle('hidden', !isOn);
+            remoteVideoContainer.classList.toggle('cam-off', !isOn);
+        };
+        
+        const updateRemoteMic = (isUnmuted) => {
+            const iconEl = document.getElementById('remote-mic-icon');
+            iconEl.outerHTML = `<i id="remote-mic-icon" data-lucide="${isUnmuted ? 'mic' : 'mic-off'}" class="w-4 h-4 text-white"></i>`;
+            lucide.createIcons();
+        };
+
+        const toggleFullscreen = () => {
+            if (!document.fullscreenElement) {
+                streamContainer.requestFullscreen().catch(err => {
+                    alert(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        };
         
         createRoomBtn.addEventListener('click', createRoom);
         joinRoomForm.addEventListener('submit', (e) => {
@@ -334,15 +393,27 @@
             if (screenTrackSender) stopSharingScreen();
             else shareScreen();
         });
-        
-        // --- Remaining event listeners and functions (hangUp, UI updates, etc.) ---
-        // ... (The rest of the JS code is identical to the previous version)
+
+        hangupBtn.addEventListener('click', hangUp);
+        micBtn.addEventListener('click', toggleMic);
+        cameraBtn.addEventListener('click', toggleCamera);
+        fullscreenBtn.addEventListener('click', toggleFullscreen);
+        copyLinkBtn.addEventListener('click', () => {
+            shareLinkInput.select();
+            document.execCommand('copy');
+            copySuccess.classList.remove('hidden');
+            setTimeout(() => copySuccess.classList.add('hidden'), 2000);
+        });
 
         async function shareScreen() {
             try {
                 const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
                 const screenTrack = screenStream.getVideoTracks()[0];
-                screenTrackSender = await pc.addTrack(screenTrack, localStream);
+                if (screenTrackSender) {
+                    await screenTrackSender.replaceTrack(screenTrack);
+                } else {
+                    screenTrackSender = pc.addTrack(screenTrack);
+                }
                 screenVideo.srcObject = screenStream;
                 screenStatusDot.classList.add('active');
                 fullscreenBtn.classList.remove('hidden');
@@ -367,7 +438,6 @@
             lucide.createIcons();
         }
 
-        // --- Page Load Logic ---
         window.addEventListener('load', () => {
             lucide.createIcons();
             const joinRoomId = new URLSearchParams(window.location.search).get('room');
