@@ -212,13 +212,16 @@
                 updateMicUI(true);
                 updateCameraUI(true);
             } catch (err) {
-                 placeholder.innerHTML = `<div class="text-red-400">Camera/Mic permissions required.</div>`;
+                 placeholder.innerHTML = `<div class="text-red-400">Camera/Mic permissions are required to create a room. Please allow access and try again.</div>`;
                  return;
             }
 
             try {
                 const roomDocRef = doc(collection(db, `artifacts/${appId}/public/data/rooms`));
                 roomId = roomDocRef.id;
+
+                // FIX: Populate the link as soon as we have the ID
+                shareLinkInput.value = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
 
                 const callerCandidatesCollection = collection(roomDocRef, 'callerCandidates');
                 pc.onicecandidate = e => e.candidate && addDoc(callerCandidatesCollection, e.candidate.toJSON());
@@ -235,11 +238,9 @@
 
                 const calleeCandidatesCollection = collection(roomDocRef, 'calleeCandidates');
                 onSnapshot(calleeCandidatesCollection, snap => snap.docChanges().forEach(c => c.type === 'added' && pc.addIceCandidate(new RTCIceCandidate(c.doc.data()))));
-
-                shareLinkInput.value = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
             } catch (err) {
                 console.error("Error creating room and setting up signaling:", err);
-                placeholder.innerHTML = `<div class="text-red-400">Could not create room. Please check console for errors.</div>`;
+                placeholder.innerHTML = `<div class="text-red-400">Could not create room due to a connection error. Please try again.</div>`;
             }
         };
 
@@ -247,7 +248,7 @@
             initializePeerConnection();
             switchToInCallView();
             roomId = joinRoomId;
-            shareScreenBtn.classList.add('hidden');
+            shareScreenBtn.classList.add('hidden'); // Guests can't share screens
 
             const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms`, roomId);
             const roomSnap = await getDoc(roomDocRef);
@@ -264,7 +265,7 @@
                 updateMicUI(true);
                 updateCameraUI(true);
             } catch (err) {
-                 placeholder.innerHTML = `<div class="text-red-400">Camera/Mic permissions required.</div>`;
+                 placeholder.innerHTML = `<div class="text-red-400">Camera/Mic permissions are required to join.</div>`;
                  return;
             }
 
@@ -355,7 +356,7 @@
         };
 
         const toggleCamera = () => {
-            const track = localStream?.getVideoTracks()[0];
+            const track = localStream?.getVideoTracks().find(t => !('displaySurface' in t.getSettings()));
             if(track) {
                 track.enabled = !track.enabled;
                 updateCameraUI(track.enabled);
@@ -369,8 +370,10 @@
         
         const updateRemoteMic = (isUnmuted) => {
             const iconEl = document.getElementById('remote-mic-icon');
-            iconEl.outerHTML = `<i id="remote-mic-icon" data-lucide="${isUnmuted ? 'mic' : 'mic-off'}" class="w-4 h-4 text-white"></i>`;
-            lucide.createIcons();
+            if(iconEl) {
+                iconEl.outerHTML = `<i id="remote-mic-icon" data-lucide="${isUnmuted ? 'mic' : 'mic-off'}" class="w-4 h-4 text-white"></i>`;
+                lucide.createIcons();
+            }
         };
 
         const toggleFullscreen = () => {
