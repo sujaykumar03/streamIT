@@ -214,9 +214,17 @@
         import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, collection, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Firebase & App Setup
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        const firebaseConfig = {
+  apiKey: "AIzaSyBMowosdHk3qp9cBSnc_M1uul7VLjJpJj4",
+  authDomain: "streamit-d7e89.firebaseapp.com",
+  projectId: "streamit-d7e89",
+  storageBucket: "streamit-d7e89.firebasestorage.app",
+  messagingSenderId: "770140743500",
+  appId: "1:770140743500:web:4d041b6c923687022711e9",
+  measurementId: "G-JPC9ZHKVR3"
+        };
+        const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
         let db, auth;
         try {
             const app = initializeApp(firebaseConfig);
@@ -408,4 +416,5 @@
     </script>
 </body>
 </html>
+
 
