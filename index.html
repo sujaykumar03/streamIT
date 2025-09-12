@@ -12,6 +12,14 @@
             font-family: 'Inter', sans-serif;
         }
 
+        /* --- Main Video Container Sizing --- */
+        #stream-container {
+            width: 95%;
+            height: 95%;
+            max-width: 1600px;
+            max-height: 900px;
+        }
+
         /* --- Base Video Container Styles --- */
         .video-container {
             position: absolute;
@@ -109,17 +117,6 @@
             70% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
             100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
         }
-        
-        /* --- Modal Styles --- */
-        .modal-backdrop {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background-color: rgba(0,0,0,0.7); backdrop-filter: blur(8px);
-            display: flex; align-items: center; justify-content: center; z-index: 200;
-        }
-        .modal-content {
-            background-color: #1f2937; border-radius: 0.75rem; padding: 2rem;
-            width: 90%; max-width: 500px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
-        }
     </style>
 </head>
 <body class="bg-gray-900 text-white flex flex-col h-screen antialiased">
@@ -138,8 +135,13 @@
 
     <!-- Main Content -->
     <main class="flex-grow container mx-auto p-4 md:p-8 flex items-center justify-center relative">
-        <div id="stream-container" class="w-full h-full bg-black rounded-xl border-2 border-dashed border-gray-700 flex flex-col items-center justify-center transition-all duration-300 relative">
+        <div id="stream-container" class="bg-black rounded-xl border-2 border-dashed border-gray-700 flex flex-col items-center justify-center transition-all duration-300 relative">
             <video id="screen-video" class="w-full h-full object-contain rounded-xl" autoplay playsinline></video>
+            
+            <button id="fullscreen-btn" class="absolute top-4 right-4 p-2 bg-gray-900/50 rounded-full hover:bg-gray-900/80 transition-all duration-200 opacity-0 group-hover:opacity-100 hidden">
+                <i id="fullscreen-icon" data-lucide="maximize" class="w-5 h-5 text-white"></i>
+            </button>
+            
             <div id="placeholder" class="text-center text-gray-500">
                 <i data-lucide="users" class="w-24 h-24 mx-auto mb-4"></i>
                 <h2 class="text-2xl font-semibold">Welcome to Streamify</h2>
@@ -152,7 +154,6 @@
                 <div class="name-tag">Guest</div>
                 <video id="remote-video" class="user-video" autoplay playsinline></video>
                 <div id="remote-avatar" class="hidden">
-                    <!-- Animated Fox SVG -->
                     <svg class="animal-avatar" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><g id="body"><path fill="#E67E22" d="M50 20 C 20 20, 20 60, 50 80 S 80 20, 50 20 Z" /><path fill="#FFFFFF" d="M50 50 C 40 60, 60 60, 50 50 L 35 30 L 65 30 Z" /><path fill="#FFFFFF" d="M35 30 C 25 20, 35 20, 35 30 Z" /><path fill="#FFFFFF" d="M65 30 C 75 20, 65 20, 65 30 Z" /></g><circle cx="40" cy="40" r="3" fill="black" /><circle cx="60" cy="40" r="3" fill="black" /><path d="M50 48 C 52 52, 48 52, 50 48" stroke="black" stroke-width="1" fill="none" /></svg>
                 </div>
             </div>
@@ -164,7 +165,6 @@
             <div class="name-tag">You</div>
             <video id="local-video" class="user-video" autoplay playsinline muted></video>
             <div id="local-avatar" class="hidden">
-                <!-- Animated Fox SVG -->
                 <svg class="animal-avatar" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><g id="body"><path fill="#E67E22" d="M50 20 C 20 20, 20 60, 50 80 S 80 20, 50 20 Z" /><path fill="#FFFFFF" d="M50 50 C 40 60, 60 60, 50 50 L 35 30 L 65 30 Z" /><path fill="#FFFFFF" d="M35 30 C 25 20, 35 20, 35 30 Z" /><path fill="#FFFFFF" d="M65 30 C 75 20, 65 20, 65 30 Z" /></g><circle cx="40" cy="40" r="3" fill="black" /><circle cx="60" cy="40" r="3" fill="black" /><path d="M50 48 C 52 52, 48 52, 50 48" stroke="black" stroke-width="1" fill="none" /></svg>
             </div>
         </div>
@@ -172,46 +172,47 @@
 
     <!-- Controls Footer -->
     <footer class="bg-gray-800/50 backdrop-blur-sm border-t border-gray-700 p-4 z-10">
-        <div class="container mx-auto flex items-center justify-center space-x-2 md:space-x-4">
-             <button id="create-room-btn" class="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all duration-200 transform hover:scale-105">
-                <i data-lucide="plus-square" class="w-5 h-5"></i>
-                <span>Create Room</span>
-            </button>
-            <button id="camera-btn" class="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                <i id="camera-icon" data-lucide="video" class="w-5 h-5"></i>
-                <span id="camera-text">Stop Camera</span>
-            </button>
-            <button id="mic-btn" class="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                <i id="mic-icon" data-lucide="mic" class="w-5 h-5"></i>
-                <span id="mic-text">Mute</span>
-            </button>
-             <button id="hangup-btn" class="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all duration-200 transform hover:scale-105 hidden">
-                <i data-lucide="phone-off" class="w-5 h-5"></i>
-                <span>End Call</span>
-            </button>
-        </div>
-    </footer>
+        <div class="container mx-auto flex items-center justify-between">
+            <!-- Share Link Box -->
+            <div id="share-link-container" class="hidden w-1/3">
+                 <label for="share-link-input" class="text-xs text-gray-400 mb-1 block">Share this private link:</label>
+                 <div class="relative flex items-center">
+                    <input id="share-link-input" type="text" class="w-full bg-gray-900 text-indigo-300 pr-10 p-2 rounded-lg border border-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" readonly>
+                    <button id="copy-link-btn" class="absolute right-2 p-1 rounded-md hover:bg-gray-700 transition">
+                        <i data-lucide="copy" class="w-4 h-4 text-gray-400"></i>
+                    </button>
+                 </div>
+                 <p id="copy-success" class="text-green-400 text-xs mt-1 hidden">Copied!</p>
+            </div>
 
-    <!-- Share Link Modal -->
-    <div id="share-modal" class="modal-backdrop hidden">
-         <div class="modal-content text-center">
-            <h3 class="text-2xl font-bold mb-4 text-white">Share this link to invite someone!</h3>
-            <p class="text-gray-400 mb-6">Once they join, the screen share will begin automatically.</p>
-            <div class="relative bg-gray-800 rounded-lg p-3 border border-gray-600">
-                <input id="share-link-input" type="text" class="w-full bg-transparent text-indigo-300 pr-12 focus:outline-none" readonly>
-                <button id="copy-link-btn" class="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg hover:bg-gray-700 transition">
-                    <i data-lucide="copy" class="w-5 h-5 text-gray-400"></i>
+            <!-- Main Control Buttons -->
+            <div class="flex items-center justify-center space-x-2 md:space-x-4">
+                 <button id="create-room-btn" class="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all duration-200 transform hover:scale-105">
+                    <i data-lucide="plus-square" class="w-5 h-5"></i>
+                    <span>Create Room</span>
+                </button>
+                <button id="camera-btn" class="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    <i id="camera-icon" data-lucide="video" class="w-5 h-5"></i>
+                    <span id="camera-text">Stop Camera</span>
+                </button>
+                <button id="mic-btn" class="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    <i id="mic-icon" data-lucide="mic" class="w-5 h-5"></i>
+                    <span id="mic-text">Mute</span>
+                </button>
+                 <button id="hangup-btn" class="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all duration-200 transform hover:scale-105 hidden">
+                    <i data-lucide="phone-off" class="w-5 h-5"></i>
+                    <span>End Call</span>
                 </button>
             </div>
-             <p id="copy-success" class="text-green-400 mt-3 text-sm hidden">Link copied to clipboard!</p>
-             <button id="close-modal-btn" class="mt-6 w-full bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition">Close</button>
+            <!-- Spacer to keep buttons centered -->
+            <div class="w-1/3"></div>
         </div>
-    </div>
+    </footer>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, updateDoc, onSnapshot, collection, addDoc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, collection, addDoc, deleteDoc, writeBatch, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- Firebase & App Setup ---
         const firebaseConfig = {
@@ -244,10 +245,12 @@
         const localAvatar = document.getElementById('local-avatar'), remoteAvatar = document.getElementById('remote-avatar');
         const placeholder = document.getElementById('placeholder'), createRoomBtn = document.getElementById('create-room-btn');
         const cameraBtn = document.getElementById('camera-btn'), micBtn = document.getElementById('mic-btn'), hangupBtn = document.getElementById('hangup-btn');
-        const shareModal = document.getElementById('share-modal'), shareLinkInput = document.getElementById('share-link-input');
-        const copyLinkBtn = document.getElementById('copy-link-btn'), closeModalBtn = document.getElementById('close-modal-btn'), copySuccess = document.getElementById('copy-success');
+        const shareLinkContainer = document.getElementById('share-link-container'), shareLinkInput = document.getElementById('share-link-input');
+        const copyLinkBtn = document.getElementById('copy-link-btn'), copySuccess = document.getElementById('copy-success');
         const screenStatusDot = document.getElementById('screen-status-dot'), camStatusDot = document.getElementById('cam-status-dot'), micStatusDot = document.getElementById('mic-status-dot');
         const localMicIcon = document.getElementById('local-mic-icon'), remoteMicIcon = document.getElementById('remote-mic-icon');
+        const streamContainer = document.getElementById('stream-container'), fullscreenBtn = document.getElementById('fullscreen-btn');
+
 
         // --- WebRTC & State ---
         const servers = { iceServers: [{ urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }] };
@@ -263,16 +266,13 @@
                     
                     screenVideo.srcObject = screenStream;
                     screenStatusDot.classList.add('active');
-
-                    // Stop sharing if the user clicks the browser's "Stop sharing" button
                     screenStream.getVideoTracks()[0].onended = hangUp;
-
                     localStream = new MediaStream([...userMedia.getTracks(), ...screenStream.getTracks()]);
                 } else {
                     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
                 }
                 
-                const localPreviewStream = new MediaStream(localStream.getVideoTracks().filter(t => t.kind === 'video' && !t.getSettings().displaySurface));
+                const localPreviewStream = new MediaStream(localStream.getVideoTracks().filter(t => !t.getSettings().displaySurface));
                 localVideo.srcObject = localPreviewStream;
                 
                 localVideoContainer.classList.remove('hidden');
@@ -284,10 +284,9 @@
 
             } catch (error) {
                 console.error("Error accessing media devices.", error);
-                placeholder.innerHTML = `<div class="text-red-400">Could not start. Please allow camera, mic, and screen permissions.</div>`;
+                placeholder.innerHTML = `<div class="text-red-400">Could not start. Please allow permissions.</div>`;
                 createRoomBtn.disabled = false;
-                createRoomBtn.innerHTML = '<span>Create Room</span><i data-lucide="plus-square" class="w-5 h-5"></i>';
-                lucide.createIcons();
+                createRoomBtn.innerHTML = '<span>Create Room</span>';
             }
         };
         
@@ -312,7 +311,6 @@
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
             
-            // Using setDoc here to create the document initially with the offer
             await setDoc(roomDocRef, { offer: { type: offer.type, sdp: offer.sdp } });
             
             onSnapshot(roomDocRef, snap => {
@@ -326,10 +324,11 @@
             onSnapshot(calleeCandidatesCollection, snap => snap.docChanges().forEach(c => c.type === 'added' && pc.addIceCandidate(new RTCIceCandidate(c.doc.data()))));
 
             shareLinkInput.value = `${window.location.href.split('?')[0]}?room=${roomId}`;
-            shareModal.classList.remove('hidden');
+            shareLinkContainer.classList.remove('hidden');
             createRoomBtn.classList.add('hidden');
             hangupBtn.classList.remove('hidden');
             placeholder.classList.add('hidden');
+            fullscreenBtn.classList.remove('hidden');
         };
 
         const joinRoom = async (joinRoomId) => {
@@ -360,6 +359,7 @@
             createRoomBtn.classList.add('hidden');
             hangupBtn.classList.remove('hidden');
             placeholder.classList.add('hidden');
+            fullscreenBtn.classList.remove('hidden');
         };
         
         function handleRemoteTrack(event) {
@@ -395,18 +395,12 @@
                     const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms`, roomId);
                     const callerCandidatesQuery = collection(roomDocRef, 'callerCandidates');
                     const calleeCandidatesQuery = collection(roomDocRef, 'calleeCandidates');
-                    
                     const batch = writeBatch(db);
-                    
-                    const callerSnaps = await getDocs(callerCandidatesQuery);
+                    const [callerSnaps, calleeSnaps] = await Promise.all([getDocs(callerCandidatesQuery), getDocs(calleeCandidatesQuery)]);
                     callerSnaps.forEach(doc => batch.delete(doc.ref));
-                    
-                    const calleeSnaps = await getDocs(calleeCandidatesQuery);
                     calleeSnaps.forEach(doc => batch.delete(doc.ref));
-
                     batch.delete(roomDocRef);
                     await batch.commit();
-
                 } catch(e){ console.error("Error cleaning up room:", e); } 
             }
             window.location.href = window.location.href.split('?')[0];
@@ -423,7 +417,7 @@
 
         const updateCameraUI = (isEnabled) => {
             cameraBtn.querySelector('span').textContent = isEnabled ? 'Stop Camera' : 'Start Camera';
-            cameraBtn.querySelector('i').outerHTML = `<i id="camera-icon" data-lucide="${isEnabled ? 'video' : 'video-off'}" class="w-5 h-5"></i>`;
+            cameraBtn.querySelector('i').outerHTML = `<i id="camera-icon" data-lucide="${isEnabled ? 'video-off' : 'video'}" class="w-5 h-5"></i>`;
             localVideo.classList.toggle('hidden', !isEnabled);
             localAvatar.classList.toggle('hidden', isEnabled);
             localVideoContainer.classList.toggle('cam-off', !isEnabled);
@@ -456,16 +450,36 @@
             remoteVideoContainer.classList.toggle('cam-off', !isOn);
         }
 
+        const toggleFullscreen = () => {
+            if (!document.fullscreenElement) {
+                streamContainer.requestFullscreen().catch(err => {
+                    alert(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        };
+
         // --- Event Listeners ---
         createRoomBtn.addEventListener('click', createRoom);
         hangupBtn.addEventListener('click', hangUp);
         micBtn.addEventListener('click', toggleMic);
         cameraBtn.addEventListener('click', toggleCamera);
-        closeModalBtn.addEventListener('click', () => shareModal.classList.add('hidden'));
+        fullscreenBtn.addEventListener('click', toggleFullscreen);
         copyLinkBtn.addEventListener('click', () => {
             shareLinkInput.select();
-            try { document.execCommand('copy'); copySuccess.classList.remove('hidden'); setTimeout(() => copySuccess.classList.add('hidden'), 2000); } catch (err) { alert('Failed to copy link.'); }
+            try { 
+                document.execCommand('copy'); 
+                copySuccess.classList.remove('hidden'); 
+                setTimeout(() => copySuccess.classList.add('hidden'), 2000); 
+            } catch (err) { alert('Failed to copy link.'); }
         });
+        document.addEventListener('fullscreenchange', () => {
+            const icon = document.fullscreenElement ? 'minimize' : 'maximize';
+            fullscreenBtn.querySelector('i').outerHTML = `<i id="fullscreen-icon" data-lucide="${icon}" class="w-5 h-5 text-white"></i>`;
+            lucide.createIcons();
+        });
+
 
         // --- Draggable Local Camera ---
         let isDragging = false, initialX, initialY, xOffset = 0, yOffset = 0;
@@ -478,7 +492,7 @@
             lucide.createIcons();
             const joinRoomId = new URLSearchParams(window.location.search).get('room');
             if (joinRoomId) {
-                createRoomBtn.style.display = 'none'; // Hide create button if joining
+                createRoomBtn.classList.add('hidden');
                 joinRoom(joinRoomId).catch(console.error);
             }
         });
