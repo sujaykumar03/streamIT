@@ -216,26 +216,31 @@
                  return;
             }
 
-            const roomDocRef = doc(collection(db, `artifacts/${appId}/public/data/rooms`));
-            roomId = roomDocRef.id;
+            try {
+                const roomDocRef = doc(collection(db, `artifacts/${appId}/public/data/rooms`));
+                roomId = roomDocRef.id;
 
-            const callerCandidatesCollection = collection(roomDocRef, 'callerCandidates');
-            pc.onicecandidate = e => e.candidate && addDoc(callerCandidatesCollection, e.candidate.toJSON());
-            
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            
-            await setDoc(roomDocRef, { offer: { type: offer.type, sdp: offer.sdp } });
-            
-            onSnapshot(roomDocRef, snap => {
-                const data = snap.data();
-                if (data?.answer && !pc.currentRemoteDescription) pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-            });
+                const callerCandidatesCollection = collection(roomDocRef, 'callerCandidates');
+                pc.onicecandidate = e => e.candidate && addDoc(callerCandidatesCollection, e.candidate.toJSON());
+                
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                
+                await setDoc(roomDocRef, { offer: { type: offer.type, sdp: offer.sdp } });
+                
+                onSnapshot(roomDocRef, snap => {
+                    const data = snap.data();
+                    if (data?.answer && !pc.currentRemoteDescription) pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+                });
 
-            const calleeCandidatesCollection = collection(roomDocRef, 'calleeCandidates');
-            onSnapshot(calleeCandidatesCollection, snap => snap.docChanges().forEach(c => c.type === 'added' && pc.addIceCandidate(new RTCIceCandidate(c.doc.data()))));
+                const calleeCandidatesCollection = collection(roomDocRef, 'calleeCandidates');
+                onSnapshot(calleeCandidatesCollection, snap => snap.docChanges().forEach(c => c.type === 'added' && pc.addIceCandidate(new RTCIceCandidate(c.doc.data()))));
 
-            shareLinkInput.value = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
+                shareLinkInput.value = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
+            } catch (err) {
+                console.error("Error creating room and setting up signaling:", err);
+                placeholder.innerHTML = `<div class="text-red-400">Could not create room. Please check console for errors.</div>`;
+            }
         };
 
         const joinRoom = async (joinRoomId) => {
