@@ -296,14 +296,12 @@
             micBtn.querySelector('i').outerHTML = `<i id="mic-icon" data-lucide="${isEnabled ? 'mic' : 'mic-off'}" class="w-5 h-5"></i>`;
             micStatusDot.classList.toggle('active', isEnabled);
             
-            // Color change logic
-            if(isEnabled) {
-                micBtn.classList.remove('bg-red-600', 'hover:bg-red-700');
-                micBtn.classList.add('bg-gray-700', 'hover:bg-gray-600');
-            } else {
-                micBtn.classList.remove('bg-gray-700', 'hover:bg-gray-600');
-                micBtn.classList.add('bg-red-600', 'hover:bg-red-700');
-            }
+            // FIX: Robust color change logic
+            micBtn.classList.toggle('bg-gray-700', isEnabled);
+            micBtn.classList.toggle('hover:bg-gray-600', isEnabled);
+            micBtn.classList.toggle('bg-red-600', !isEnabled);
+            micBtn.classList.toggle('hover:bg-red-700', !isEnabled);
+
             lucide.createIcons();
         };
         const updateCameraUI = (isEnabled) => {
