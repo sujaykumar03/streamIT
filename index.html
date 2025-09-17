@@ -216,11 +216,11 @@
         const localMicIcon = document.getElementById('local-mic-icon');
         const remoteMicIcon = document.getElementById('remote-mic-icon');
 
-
         let peer;
         let localStream;
         let screenStream;
         let currentCall;
+        let screenTrackSender;
 
         const createVideoElement = (muted = false) => {
             const video = document.createElement('video');
@@ -318,17 +318,26 @@
 
         const handleIncomingCall = (call) => {
             currentCall = call;
-            call.on('stream', (stream) => {
-                 const isScreen = stream.getVideoTracks()[0]?.getSettings().displaySurface;
-                 const targetDiv = isScreen ? screenShareDiv : remoteVideoDiv;
-                 targetDiv.innerHTML = ''; 
-                 const video = createVideoElement();
-                 video.srcObject = stream;
-                 if (isScreen) {
-                    targetDiv.append(video);
-                 } else {
-                    targetDiv.append(video, remoteMicIcon, remoteAvatar);
+
+            const peerConnection = call.peerConnection;
+            peerConnection.ontrack = (event) => {
+                const stream = event.streams[0];
+                const track = event.track;
+
+                const isScreen = track.kind === 'video' && 'displaySurface' in track.getSettings();
+
+                if(isScreen) {
+                    screenShareDiv.innerHTML = '';
+                    const video = createVideoElement();
+                    video.srcObject = new MediaStream([track]);
+                    screenShareDiv.append(video);
+                } else {
+                    remoteVideoDiv.innerHTML = '';
+                    const video = createVideoElement();
+                    video.srcObject = stream;
+                    remoteVideoDiv.append(video, remoteMicIcon, remoteAvatar);
                     remoteMicIcon.style.display = 'block';
+
                     const audioTrack = stream.getAudioTracks()[0];
                     if (audioTrack) {
                          audioTrack.onmute = () => updateRemoteMicUI(false);
@@ -339,24 +348,36 @@
                         videoTrack.onmute = () => updateRemoteCameraUI(false);
                         videoTrack.onunmute = () => updateRemoteCameraUI(true);
                     }
-                 }
-            });
+                }
+            };
+
             call.on('close', hangUp);
         };
-
+        
         const toggleScreenShare = async () => {
             const btn = document.getElementById('share-screen-btn');
             const isActive = screenStream && screenStream.active;
 
             if (isActive) {
+                // Stop sharing
                 screenStream.getTracks().forEach(track => track.stop());
                 screenStream = null;
+                if(screenTrackSender) {
+                    currentCall.peerConnection.removeTrack(screenTrackSender);
+                    screenTrackSender = null;
+                }
                 screenShareDiv.innerHTML = '<span>Screen share will appear here</span>';
                 btn.innerHTML = `<i data-lucide="screen-share"></i>Share Screen`;
             } else {
+                // Start sharing
                 try {
                     screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-                    if (currentCall) peer.call(currentCall.peer, screenStream);
+                    const screenTrack = screenStream.getVideoTracks()[0];
+
+                    if (currentCall) {
+                       screenTrackSender = currentCall.peerConnection.addTrack(screenTrack, screenStream);
+                    }
+                    
                     screenShareDiv.innerHTML = '';
                     const video = createVideoElement(true);
                     video.srcObject = screenStream;
@@ -367,6 +388,7 @@
             }
             lucide.createIcons();
         };
+
 
         const hangUp = () => {
             peer?.destroy();
@@ -400,7 +422,7 @@
             }
             lucide.createIcons();
         };
-
+        
         const updateRemoteMicUI = (isEnabled) => {
              remoteMicIcon.querySelector('i').outerHTML = `<i data-lucide="${isEnabled ? 'mic' : 'mic-off'}" class="w-4 h-4 text-white"></i>`;
              lucide.createIcons();
