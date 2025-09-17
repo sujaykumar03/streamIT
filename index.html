@@ -126,6 +126,15 @@
         }
 
         .controls {
+            /* This is now a container for the initial controls OR the call controls */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding-top: 1.5rem;
+            width: 100%;
+        }
+        
+        .control-bar {
             position: fixed;
             bottom: 1.5rem;
             left: 50%;
@@ -142,7 +151,7 @@
             z-index: 100;
         }
 
-        .controls button {
+        .control-bar button {
             background-color: var(--light-bg);
             color: var(--text-primary);
             border: 1px solid var(--border-color);
@@ -159,24 +168,24 @@
             margin: 0;
         }
 
-        .controls button:hover { background-color: #3a3a3a; }
-        .controls button:active { transform: scale(0.95); }
-        .controls button.red { background-color: var(--accent-red); border-color: var(--accent-red); }
-        .controls button.red:hover { background-color: var(--accent-red-hover); }
+        .control-bar button:hover { background-color: #3a3a3a; }
+        .control-bar button:active { transform: scale(0.95); }
+        .control-bar button.red { background-color: var(--accent-red); border-color: var(--accent-red); }
+        .control-bar button.red:hover { background-color: var(--accent-red-hover); }
 
         #initial-controls {
             display: flex;
             align-items: center;
             justify-content: center;
-            padding-top: 2rem;
-            gap: 1rem;
+            gap: 1.5rem;
             width: 100%;
         }
         #initial-controls .separator {
             color: var(--text-secondary);
+            font-size: 0.9rem;
         }
-        #initial-controls form {
-            display: inline-flex;
+        #initial-controls .join-group {
+            display: flex;
             gap: 0.5rem;
         }
         #initial-controls input {
@@ -186,11 +195,19 @@
             background-color: var(--medium-bg);
             color: var(--text-primary);
             font-size: 1rem;
+            width: 250px;
         }
         #initial-controls button {
             background-color: var(--accent-blue);
             border-radius: 8px;
             padding: 10px 20px;
+            border: none;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
         }
         #initial-controls button:hover { background-color: var(--accent-blue-hover); }
         
@@ -200,11 +217,10 @@
         .animal-avatar { width: 40%; height: 40%; min-width: 50px; }
         .animal-avatar #body { animation: breathing 3s ease-in-out infinite; }
         @keyframes breathing { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
-        .dialog { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 2rem; background-color: #e8f0fe; border: 1px solid #d2e3fc; border-radius: 8px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.1); z-index: 1000; color: #333; }
+        .dialog { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 2rem; background-color: #e8f0fe; border: 1px solid #d2e3fc; border-radius: 8px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.1); z-index: 1000; color: #333;}
         .dialog input { width: 100%; max-width: 400px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; margin: 1rem 0; }
         .dialog button { background-color: #34a853; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
 
-        /* --- Toast Notification System --- */
         #toast-container {
             position: fixed;
             top: 1.5rem;
@@ -273,6 +289,7 @@
     </div>
 
     <script>
+        // --- DOM Elements ---
         const controlsDiv = document.getElementById('controls');
         const screenShareDiv = document.getElementById('screenShare');
         const localVideoDiv = document.getElementById('localVideo');
@@ -286,12 +303,14 @@
         const localMicIcon = document.getElementById('local-mic-icon');
         const remoteMicIcon = document.getElementById('remote-mic-icon');
 
+        // --- State Variables ---
         let peer;
         let localStream;
         let screenStream;
         let currentCall;
         let screenCall;
         
+        // --- UI Functions ---
         const showToast = (message, type = 'info') => {
             const toastContainer = document.getElementById('toast-container');
             const toast = document.createElement('div');
@@ -314,20 +333,29 @@
         const setupInitialControls = () => {
             controlsDiv.innerHTML = `
                 <div id="initial-controls">
-                    <button id="create-room-btn"><i data-lucide="plus-square"></i>Create Room</button>
+                    <button id="create-room-btn" type="button"><i data-lucide="plus-square"></i>Create Room</button>
                     <span class="separator">or</span>
-                    <form id="join-room-form">
+                    <div class="join-group">
                         <input type="text" id="join-room-input" placeholder="Paste Room Link">
-                        <button type="submit"><i data-lucide="log-in"></i>Join Room</button>
-                    </form>
+                        <button id="join-room-btn" type="button"><i data-lucide="log-in"></i>Join Room</button>
+                    </div>
                 </div>
             `;
             lucide.createIcons();
             document.getElementById('create-room-btn').addEventListener('click', createRoom);
-            document.getElementById('join-room-form').addEventListener('submit', handleJoinForm);
+            document.getElementById('join-room-btn').addEventListener('click', handleJoinForm);
+            document.getElementById('join-room-input').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault(); // prevent form submission
+                    handleJoinForm();
+                }
+            });
         };
 
         const setupInCallControls = (isHost = false) => {
+            controlsDiv.innerHTML = ''; // Clear initial controls
+            controlsDiv.className = 'control-bar'; // Switch to floating bar style
+
             let hostControls = isHost 
                 ? `<button id="share-screen-btn" title="Share Screen"><i data-lucide="screen-share"></i></button>`
                 : '';
@@ -340,14 +368,13 @@
             `;
             lucide.createIcons();
             
-            if (isHost) {
-                document.getElementById('share-screen-btn').addEventListener('click', toggleScreenShare);
-            }
+            if (isHost) document.getElementById('share-screen-btn').addEventListener('click', toggleScreenShare);
             document.getElementById('mic-btn').addEventListener('click', toggleMic);
             document.getElementById('camera-btn').addEventListener('click', toggleCamera);
             document.getElementById('hangup-btn').addEventListener('click', hangUp);
         };
 
+        // --- WebRTC Core Logic ---
         const getLocalMedia = async () => {
             try {
                 localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -375,9 +402,7 @@
                         video.srcObject = remoteScreenStream;
                         screenShareDiv.append(video);
                     });
-                    call.on('close', () => {
-                         screenShareDiv.innerHTML = '<span>Screen share has ended</span>';
-                    });
+                    call.on('close', () => { screenShareDiv.innerHTML = '<span>Screen share has ended</span>'; });
                     screenCall = call;
                 } else { 
                     call.answer(localStream);
@@ -414,8 +439,7 @@
             setupCallListeners();
         };
         
-        const handleJoinForm = (e) => {
-            e.preventDefault();
+        const handleJoinForm = () => {
             const url = document.getElementById('join-room-input').value;
             if (!url) {
                 showToast("Please paste a room link.", "error");
@@ -486,10 +510,6 @@
             });
             
             call.on('close', hangUp);
-            call.on('error', (err) => {
-                console.error("Call error:", err);
-                hangUp();
-            });
         };
         
         const toggleScreenShare = async () => {
