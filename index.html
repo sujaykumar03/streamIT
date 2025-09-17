@@ -322,6 +322,7 @@
         // --- UI Functions ---
         const showToast = (message, type = 'info') => {
             const toastContainer = document.getElementById('toast-container');
+            if (!toastContainer) return;
             const toast = document.createElement('div');
             toast.className = `toast ${type}`;
             toast.textContent = message;
@@ -363,7 +364,6 @@
              document.getElementById('nickname-input').addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') {
                     e.preventDefault();
-                    // If there's a link, try to join, otherwise create
                     if(document.getElementById('join-room-input').value) {
                         handleJoinForm();
                     } else {
@@ -671,5 +671,4 @@
         });
     </script>
 </body>
-</html>
-what are the things that need change, you think
+</html> 
