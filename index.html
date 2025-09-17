@@ -220,7 +220,7 @@ const controlsDiv = document.getElementById('controls');
         let localStream;
         let screenStream;
         let currentCall;
-        let screenCall; // NEW: To hold the screen share call object
+        let screenCall;
 
         const createVideoElement = (muted = false) => {
             const video = document.createElement('video');
@@ -272,24 +272,15 @@ const controlsDiv = document.getElementById('controls');
                 throw err;
             }
         };
-        
-        // MODIFIED: This function now initializes the peer connection and sets up all listeners.
-        const initializePeer = (peerId) => {
-            peer = peerId ? new Peer(peerId) : new Peer();
 
-            peer.on('open', (id) => {
-                if (!peerId) { // This is the host creating the room
-                    roomLinkInput.value = `${window.location.href.split('?')[0]}?room=${id}`;
-                    roomDialog.style.display = 'block';
-                }
-            });
-            
-            // This single listener now handles both camera and screen share calls
+        // NEW: A shared function to handle all incoming calls (camera or screen)
+        const setupCallListeners = () => {
             peer.on('call', (call) => {
                 const callType = call.metadata?.type;
                 
                 if (callType === 'screen') {
-                    call.answer(); // No stream needed to answer, we just want to receive
+                    // This is an incoming screen share call
+                    call.answer(); // Answer, but don't send our own stream
                     call.on('stream', (remoteScreenStream) => {
                         screenShareDiv.innerHTML = '';
                         const video = createVideoElement();
@@ -300,20 +291,30 @@ const controlsDiv = document.getElementById('controls');
                          screenShareDiv.innerHTML = '<span>Screen share has ended</span>';
                     });
                     screenCall = call;
-                } else { // Default is the main video/audio call
+                } else { 
+                    // This is an incoming main video/audio call from the guest
                     call.answer(localStream);
                     handleIncomingCall(call);
                 }
             });
-
-            peer.on('error', (err) => alert('Connection Error: ' + err.message));
         };
 
+        // MODIFIED: Host logic is now self-contained
         const createRoom = async () => {
             await getLocalMedia().catch(() => {});
             if (!localStream) return;
             setupInCallControls(true);
-            initializePeer(); // Host initializes peer without an ID
+
+            peer = new Peer(); // Host gets a new peer object with a random ID
+            
+            peer.on('open', (id) => {
+                // The 'id' is the new room ID. Only the host runs this.
+                roomLinkInput.value = `${window.location.href.split('?')[0]}?room=${id}`;
+                roomDialog.style.display = 'block';
+            });
+
+            peer.on('error', (err) => alert('Connection Error: ' + err.message));
+            setupCallListeners(); // Host starts listening for calls
         };
         
         const handleJoinForm = (e) => {
@@ -328,17 +329,22 @@ const controlsDiv = document.getElementById('controls');
             }
         }
         
+        // MODIFIED: Guest logic is now self-contained
         const joinRoom = async (roomId) => {
             await getLocalMedia().catch(() => {});
             if (!localStream) return;
             setupInCallControls(false);
-            initializePeer(); // Guest also initializes peer, will get their own ID
 
-            // We need a brief moment for the peer to initialize before calling
-            setTimeout(() => {
+            peer = new Peer(); // Guest gets their own peer object
+
+            peer.on('open', () => {
+                // Once the guest is connected to the Peer server, they call the host.
                 const call = peer.call(roomId, localStream, { metadata: { type: 'video' } });
                 handleIncomingCall(call);
-            }, 500);
+            });
+
+            peer.on('error', (err) => alert('Connection Error: ' + err.message));
+            setupCallListeners(); // Guest also listens for incoming calls (like screen share)
         };
 
         const handleIncomingCall = (call) => {
@@ -354,7 +360,6 @@ const controlsDiv = document.getElementById('controls');
                 const audioTrack = remoteUserStream.getAudioTracks()[0];
                 if (audioTrack) {
                     updateRemoteMicUI(audioTrack.enabled);
-                    // Using 'mute' and 'unmute' events on tracks is more reliable
                     audioTrack.addEventListener('mute', () => updateRemoteMicUI(false));
                     audioTrack.addEventListener('unmute', () => updateRemoteMicUI(true));
                 }
@@ -369,7 +374,6 @@ const controlsDiv = document.getElementById('controls');
             call.on('close', hangUp);
         };
         
-        // MODIFIED: Big changes here to use a new call for screen sharing
         const toggleScreenShare = async () => {
             const btn = document.getElementById('share-screen-btn');
             const isActive = screenStream && screenStream.active;
@@ -377,7 +381,7 @@ const controlsDiv = document.getElementById('controls');
             if (isActive) {
                 screenStream.getTracks().forEach(track => track.stop());
                 screenStream = null;
-                screenCall?.close(); // Close the specific screen share call
+                screenCall?.close();
                 screenCall = null;
                 screenShareDiv.innerHTML = '<span>Screen share will appear here</span>';
                 btn.innerHTML = `<i data-lucide="screen-share"></i>Share Screen`;
@@ -387,7 +391,6 @@ const controlsDiv = document.getElementById('controls');
                     const screenTrack = screenStream.getVideoTracks()[0];
 
                     if (currentCall) {
-                        // Start a NEW call for the screen share stream
                         screenCall = peer.call(currentCall.peer, screenStream, { metadata: { type: 'screen' } });
                     }
                     
@@ -397,10 +400,9 @@ const controlsDiv = document.getElementById('controls');
                     screenShareDiv.append(video);
                     btn.innerHTML = `<i data-lucide="screen-share-off"></i>Stop Sharing`;
                     
-                    // Listen for the user stopping the share via browser controls
                     screenTrack.onended = () => {
-                        if (screenCall) { // Check if we are still in a call
-                           toggleScreenShare(); // This will trigger the cleanup logic
+                        if (document.getElementById('share-screen-btn')) {
+                           toggleScreenShare();
                         }
                     };
                 } catch (err) { console.error("Screen share failed", err); }
@@ -464,8 +466,7 @@ const controlsDiv = document.getElementById('controls');
             lucide.createIcons();
             const roomId = new URLSearchParams(window.location.search).get('room');
             if (roomId) {
-                // To avoid showing the "Join Room" form briefly, we set up controls inside joinRoom now
-                document.getElementById('controls').innerHTML = "<h4>Connecting...</h4>";
+                controlsDiv.innerHTML = "<h4>Connecting...</h4>";
                 joinRoom(roomId).catch(console.error);
             } else {
                 setupInitialControls();
