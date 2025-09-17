@@ -1,188 +1,274 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Streamify - Collaborative Screen Sharing</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>PeerStream - Collaborative Screen Sharing</title>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        body { font-family: 'Inter', sans-serif; }
-        #stream-container { width: 95%; height: 95%; max-width: 1600px; max-height: 900px; }
-        .video-container {
-            position: absolute; border-radius: 0.75rem; overflow: hidden;
-            border: 3px solid rgba(255, 255, 255, 0.2); box-shadow: 0 10px 20px rgba(0,0,0,0.2);
-            transition: all 0.3s ease-in-out; background-color: #374151;
-            display: flex; align-items: center; justify-content: center;
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #ffffff;
+            color: #333;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
         }
-        #local-video-container { bottom: 20px; right: 20px; width: 240px; height: 180px; resize: both; cursor: move; z-index: 100; }
-        #remote-video-container { top: 20px; left: 20px; width: 240px; height: 180px; border-color: #4f46e5; z-index: 90; }
-        .video-container:hover { border-color: #6366f1; }
-        .video-container.cam-off { width: 120px; height: 120px; }
-        .user-video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); position: absolute; top: 0; left: 0; }
-        .name-tag { position: absolute; bottom: 6px; left: 10px; background-color: rgba(0,0,0,0.5); color: white; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 500; z-index: 2; }
+        .container {
+            width: 100%;
+            height: 100%;
+            padding: 1rem 2rem;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+        }
+        h1 {
+            color: #1a73e8;
+            margin: 0 0 1rem 0;
+            text-align: left;
+        }
+        .main-content {
+            display: flex;
+            gap: 1.5rem;
+            align-items: stretch;
+            flex: 1;
+            min-height: 0;
+        }
+        .screen-share-container {
+            flex: 4;
+            display: flex;
+            flex-direction: column;
+        }
+        .screen-placeholder {
+            width: 100%;
+            height: 100%;
+            background-color: #222;
+            border-radius: 10px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #888;
+            font-size: 1.2rem;
+            overflow: hidden;
+            position: relative;
+        }
+        .cams-sidebar {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+        .cam-wrapper {
+            display: flex;
+            flex-direction: column;
+        }
+        .cam-wrapper h2 {
+            font-size: 1rem;
+            margin-bottom: 0.5rem;
+            text-align: left;
+        }
+        .cam-placeholder {
+            width: 100%;
+            height: 200px;
+            background-color: #000;
+            border-radius: 8px;
+            border: 2px solid #e0e0e0;
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .controls {
+            padding-top: 1.5rem;
+            text-align: center;
+        }
+        .controls button, #join-room-form button {
+            background-color: #1a73e8;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            margin: 0 0.5rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .controls button:hover, #join-room-form button:hover {
+            background-color: #155ab6;
+        }
+        .controls button.red { background-color: #d93025; }
+        .controls button.red:hover { background-color: #a52714; }
+        .dialog {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 2rem;
+            background-color: #e8f0fe;
+            border: 1px solid #d2e3fc;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+        .dialog input {
+            width: 100%;
+            max-width: 400px;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            margin: 1rem 0;
+        }
+        .dialog button {
+            background-color: #34a853;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        #join-room-form input {
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+        }
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+        #screenShare video {
+             object-fit: contain;
+             transform: scaleX(1);
+        }
         .mic-status-icon { position: absolute; top: 8px; left: 10px; background-color: rgba(0,0,0,0.5); border-radius: 50%; padding: 4px; z-index: 2; }
-        .animal-avatar { width: 80%; height: 80%; }
+        .animal-avatar { width: 50%; height: 50%; }
         .animal-avatar #body { animation: breathing 3s ease-in-out infinite; }
         @keyframes breathing { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
-        .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 8px; background-color: #ef4444; transition: background-color 0.3s ease; }
-        .status-dot.active { background-color: #22c55e; animation: pulse 2s infinite; }
-        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); } 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); } }
     </style>
 </head>
-<body class="bg-gray-900 text-white flex flex-col h-screen antialiased">
-
-    <!-- Header -->
-    <header class="bg-gray-800/50 backdrop-blur-sm border-b border-gray-700 p-4 shadow-lg z-10">
-        <div class="container mx-auto flex justify-between items-center">
-            <h1 class="text-2xl font-bold text-indigo-400">Streamify</h1>
-            <div id="status-indicators" class="hidden items-center space-x-6 text-sm">
-                <div class="flex items-center"><span id="screen-status-dot" class="status-dot"></span> Screen</div>
-                <div class="flex items-center"><span id="cam-status-dot" class="status-dot"></span> Camera</div>
-                <div class="flex items-center"><span id="mic-status-dot" class="status-dot"></span> Mic</div>
-            </div>
-        </div>
-    </header>
-
-    <!-- Main Content -->
-    <main class="flex-grow container mx-auto p-4 md:p-8 flex items-center justify-center relative">
-        <!-- Entry View -->
-        <div id="entry-view" class="w-full max-w-md">
-            <div class="bg-gray-800/50 p-8 rounded-2xl shadow-2xl border border-gray-700 backdrop-blur-lg text-center">
-                <h2 class="text-3xl font-bold text-white mb-6">Welcome to Streamify</h2>
-                <button id="create-room-btn" class="w-full flex items-center justify-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all duration-200 transform hover:scale-105">
-                    <i data-lucide="plus-square" class="w-5 h-5"></i>
-                    <span>Create a Private Room</span>
-                </button>
-                <div class="my-4 text-gray-500">OR</div>
-                <form id="join-room-form" class="flex flex-col space-y-4">
-                    <input id="join-room-input" type="text" placeholder="Paste Room Link to Join" class="w-full bg-gray-900 text-white p-3 rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    <button type="submit" class="w-full flex items-center justify-center space-x-2 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all duration-200">
-                        <i data-lucide="log-in" class="w-5 h-5"></i>
-                        <span>Join Room</span>
-                    </button>
-                </form>
-            </div>
-        </div>
-
-        <!-- In-Call View -->
-        <div id="in-call-view" class="w-full h-full hidden">
-            <div id="stream-container" class="bg-black rounded-xl border-2 border-dashed border-gray-700 flex flex-col items-center justify-center transition-all duration-300 relative group">
-                <video id="screen-video" class="w-full h-full object-contain rounded-xl" autoplay playsinline></video>
-                <div id="placeholder" class="text-center text-gray-500">
-                    <i data-lucide="users" class="w-24 h-24 mx-auto mb-4"></i>
-                    <h2 class="text-2xl font-semibold">Waiting for guest to join...</h2>
-                    <p class="mt-2">Share the link below to invite someone.</p>
+<body>
+    <div class="container">
+        <h1>PeerStream 📹</h1>
+        
+        <div class="main-content">
+            <div class="screen-share-container">
+                <div id="screenShare" class="screen-placeholder">
+                    <span>Screen share will appear here</span>
                 </div>
-                <button id="fullscreen-btn" class="absolute top-4 right-4 p-2 bg-gray-900/50 rounded-full hover:bg-gray-900/80 transition-all duration-200 opacity-0 group-hover:opacity-100 hidden">
-                    <i id="fullscreen-icon" data-lucide="maximize" class="w-5 h-5 text-white"></i>
-                </button>
-                <div id="remote-video-container" class="video-container hidden">
-                    <div class="mic-status-icon"><i id="remote-mic-icon" data-lucide="mic" class="w-4 h-4 text-white"></i></div>
-                    <div class="name-tag">Guest</div>
-                    <video id="remote-video" class="user-video" autoplay playsinline></video>
-                    <div id="remote-avatar" class="hidden">
-                        <svg class="animal-avatar" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><g id="body"><path fill="#E67E22" d="M50 20 C 20 20, 20 60, 50 80 S 80 20, 50 20 Z" /><path fill="#FFFFFF" d="M50 50 C 40 60, 60 60, 50 50 L 35 30 L 65 30 Z" /><path fill="#FFFFFF" d="M35 30 C 25 20, 35 20, 35 30 Z" /><path fill="#FFFFFF" d="M65 30 C 75 20, 65 20, 65 30 Z" /></g><circle cx="40" cy="40" r="3" fill="black" /><circle cx="60" cy="40" r="3" fill="black" /><path d="M50 48 C 52 52, 48 52, 50 48" stroke="black" stroke-width="1" fill="none" /></svg>
+            </div>
+
+            <div class="cams-sidebar">
+                <div class="cam-wrapper">
+                    <h2>Your Video</h2>
+                    <div id="localVideo" class="cam-placeholder">
+                        <div class="mic-status-icon" id="local-mic-icon" style="display: none;"><i data-lucide="mic" class="w-4 h-4 text-white"></i></div>
+                        <div id="local-avatar" style="display: none;">
+                             <svg class="animal-avatar" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><g id="body"><path fill="#E67E22" d="M50 20 C 20 20, 20 60, 50 80 S 80 20, 50 20 Z" /><path fill="#FFFFFF" d="M50 50 C 40 60, 60 60, 50 50 L 35 30 L 65 30 Z" /><path fill="#FFFFFF" d="M35 30 C 25 20, 35 20, 35 30 Z" /><path fill="#FFFFFF" d="M65 30 C 75 20, 65 20, 65 30 Z" /></g><circle cx="40" cy="40" r="3" fill="black" /><circle cx="60" cy="40" r="3" fill="black" /><path d="M50 48 C 52 52, 48 52, 50 48" stroke="black" stroke-width="1" fill="none" /></svg>
+                        </div>
+                    </div>
+                </div>
+                <div class="cam-wrapper">
+                    <h2>Remote Video</h2>
+                    <div id="remoteVideo" class="cam-placeholder">
+                         <div class="mic-status-icon" id="remote-mic-icon" style="display: none;"><i data-lucide="mic" class="w-4 h-4 text-white"></i></div>
+                         <div id="remote-avatar" style="display: none;">
+                             <svg class="animal-avatar" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><g id="body"><path fill="#E67E22" d="M50 20 C 20 20, 20 60, 50 80 S 80 20, 50 20 Z" /><path fill="#FFFFFF" d="M50 50 C 40 60, 60 60, 50 50 L 35 30 L 65 30 Z" /><path fill="#FFFFFF" d="M35 30 C 25 20, 35 20, 35 30 Z" /><path fill="#FFFFFF" d="M65 30 C 75 20, 65 20, 65 30 Z" /></g><circle cx="40" cy="40" r="3" fill="black" /><circle cx="60" cy="40" r="3" fill="black" /><path d="M50 48 C 52 52, 48 52, 50 48" stroke="black" stroke-width="1" fill="none" /></svg>
+                        </div>
                     </div>
                 </div>
             </div>
-            <div id="local-video-container" class="video-container hidden">
-                <div class="mic-status-icon"><i id="local-mic-icon" data-lucide="mic" class="w-4 h-4 text-white"></i></div>
-                <div class="name-tag">You</div>
-                <video id="local-video" class="user-video" autoplay playsinline muted></video>
-                <div id="local-avatar" class="hidden">
-                    <svg class="animal-avatar" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><g id="body"><path fill="#E67E22" d="M50 20 C 20 20, 20 60, 50 80 S 80 20, 50 20 Z" /><path fill="#FFFFFF" d="M50 50 C 40 60, 60 60, 50 50 L 35 30 L 65 30 Z" /><path fill="#FFFFFF" d="M35 30 C 25 20, 35 20, 35 30 Z" /><path fill="#FFFFFF" d="M65 30 C 75 20, 65 20, 65 30 Z" /></g><circle cx="40" cy="40" r="3" fill="black" /><circle cx="60" cy="40" r="3" fill="black" /><path d="M50 48 C 52 52, 48 52, 50 48" stroke="black" stroke-width="1" fill="none" /></svg>
-                    </div>
-                </div>
-            </div>
-    </main>
-
-    <!-- Controls Footer -->
-    <footer id="in-call-footer" class="bg-gray-800/50 backdrop-blur-sm border-t border-gray-700 p-4 z-10 hidden">
-        <div class="container mx-auto flex items-center justify-between">
-            <div id="share-link-container" class="w-1/3 opacity-0 transition-opacity duration-500">
-                 <label for="share-link-input" class="text-xs text-gray-400 mb-1 block">Invite Guest with this Link:</label>
-                 <div class="relative flex items-center">
-                    <input id="share-link-input" type="text" class="w-full bg-gray-900 text-indigo-300 pr-10 p-2 rounded-lg border border-gray-700 focus:outline-none" readonly>
-                    <button id="copy-link-btn" class="absolute right-2 p-1 rounded-md hover:bg-gray-700 transition">
-                        <i data-lucide="copy" class="w-4 h-4 text-gray-400"></i>
-                    </button>
-                 </div>
-                 <p id="copy-success" class="text-green-400 text-xs mt-1 hidden">Copied!</p>
-            </div>
-            <div class="flex items-center justify-center space-x-2 md:space-x-4">
-                <button id="share-screen-btn" class="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition-all duration-200">
-                    <i data-lucide="screen-share" class="w-5 h-5"></i>
-                    <span>Share Screen</span>
-                </button>
-                <button id="camera-btn" class="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition-all duration-200">
-                    <i id="camera-icon" data-lucide="video" class="w-5 h-5"></i>
-                    <span id="camera-text">Stop Camera</span>
-                </button>
-                <button id="mic-btn" class="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition-all duration-200">
-                    <i id="mic-icon" data-lucide="mic" class="w-5 h-5"></i>
-                    <span id="mic-text">Mute</span>
-                </button>
-                 <button id="hangup-btn" class="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition-all duration-200">
-                    <i data-lucide="phone-off" class="w-5 h-5"></i>
-                    <span>End Call</span>
-                </button>
-            </div>
-            <div class="w-1/3"></div>
         </div>
-    </footer>
+
+        <div class="controls" id="controls">
+             <!-- Controls will be dynamically inserted here -->
+        </div>
+
+        <div id="roomDialog" class="dialog" style="display:none;">
+            <h3>Room Created!</h3>
+            <p>Share this link with your friend:</p>
+            <input type="text" id="roomLink" readonly>
+            <br>
+            <button id="copyLinkBtn">Copy Link</button>
+            <button id="closeDialogBtn">Close</button>
+        </div>
+    </div>
 
     <script>
-        // --- DOM Elements ---
-        const entryView = document.getElementById('entry-view'), inCallView = document.getElementById('in-call-view');
-        const createRoomBtn = document.getElementById('create-room-btn'), joinRoomForm = document.getElementById('join-room-form');
-        const screenVideo = document.getElementById('screen-video'), localVideo = document.getElementById('local-video'), remoteVideo = document.getElementById('remote-video');
-        const localVideoContainer = document.getElementById('local-video-container'), remoteVideoContainer = document.getElementById('remote-video-container');
-        const placeholder = document.getElementById('placeholder');
-        const inCallFooter = document.getElementById('in-call-footer');
-        const shareScreenBtn = document.getElementById('share-screen-btn');
-        const cameraBtn = document.getElementById('camera-btn'), micBtn = document.getElementById('mic-btn'), hangupBtn = document.getElementById('hangup-btn');
-        const shareLinkInput = document.getElementById('share-link-input');
-        const copyLinkBtn = document.getElementById('copy-link-btn'), copySuccess = document.getElementById('copy-success');
-        const statusIndicators = document.getElementById('status-indicators');
-        const screenStatusDot = document.getElementById('screen-status-dot'), camStatusDot = document.getElementById('cam-status-dot'), micStatusDot = document.getElementById('mic-status-dot');
-        const fullscreenBtn = document.getElementById('fullscreen-btn');
+        const controlsDiv = document.getElementById('controls');
+        const screenShareDiv = document.getElementById('screenShare');
+        const localVideoDiv = document.getElementById('localVideo');
+        const remoteVideoDiv = document.getElementById('remoteVideo');
+        const roomDialog = document.getElementById('roomDialog');
+        const roomLinkInput = document.getElementById('roomLink');
+        const copyLinkBtn = document.getElementById('copyLinkBtn');
+        const closeDialogBtn = document.getElementById('closeDialogBtn');
         const localAvatar = document.getElementById('local-avatar');
         const remoteAvatar = document.getElementById('remote-avatar');
+        const localMicIcon = document.getElementById('local-mic-icon');
         const remoteMicIcon = document.getElementById('remote-mic-icon');
-        
-        // --- State ---
+
+
         let peer;
         let localStream;
         let screenStream;
-        let remoteStream = new MediaStream();
         let currentCall;
 
-        // --- Core Functions ---
-        const switchToInCallView = (isHost = false) => {
-            entryView.classList.add('hidden');
-            inCallView.classList.remove('hidden');
-            inCallFooter.classList.remove('hidden');
-            statusIndicators.classList.remove('hidden');
-            statusIndicators.classList.add('flex');
-            if (!isHost) {
-                shareScreenBtn.classList.add('hidden');
-                document.getElementById('share-link-container').style.visibility = 'hidden';
+        const createVideoElement = (muted = false) => {
+            const video = document.createElement('video');
+            video.autoplay = true;
+            video.playsInline = true;
+            video.muted = muted;
+            return video;
+        };
+        
+        const setupInitialControls = () => {
+            controlsDiv.innerHTML = `
+                <button id="create-room-btn"><i data-lucide="plus-square"></i>Create Room</button>
+                <form id="join-room-form" style="display: inline-block;">
+                    <input type="text" id="join-room-input" placeholder="Paste Room Link" style="margin-right: 8px; padding: 10px; border-radius: 6px; border: 1px solid #ccc;">
+                    <button type="submit"><i data-lucide="log-in"></i>Join Room</button>
+                </form>
+            `;
+            lucide.createIcons();
+            document.getElementById('create-room-btn').addEventListener('click', createRoom);
+            document.getElementById('join-room-form').addEventListener('submit', handleJoinForm);
+        };
+
+        const setupInCallControls = (isHost = false) => {
+            controlsDiv.innerHTML = `
+                ${isHost ? '<button id="share-screen-btn"><i data-lucide="screen-share"></i>Share Screen</button>' : ''}
+                <button id="mic-btn"><i data-lucide="mic"></i>Mute</button>
+                <button id="camera-btn"><i data-lucide="video"></i>Stop Camera</button>
+                <button id="hangup-btn" class="red"><i data-lucide="phone-off"></i>End Call</button>
+            `;
+            lucide.createIcons();
+            if (isHost) {
+                document.getElementById('share-screen-btn').addEventListener('click', toggleScreenShare);
             }
+            document.getElementById('mic-btn').addEventListener('click', toggleMic);
+            document.getElementById('camera-btn').addEventListener('click', toggleCamera);
+            document.getElementById('hangup-btn').addEventListener('click', hangUp);
         };
 
         const getLocalMedia = async () => {
             try {
                 localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                localVideoDiv.innerHTML = ''; 
+                const localVideo = createVideoElement(true);
                 localVideo.srcObject = localStream;
-                localVideoContainer.classList.remove('hidden');
-                updateMicUI(true);
-                updateCameraUI(true);
+                localVideoDiv.append(localVideo, localMicIcon, localAvatar);
+                localMicIcon.style.display = 'block';
             } catch (err) {
-                console.error("Failed to get local media", err);
-                placeholder.innerHTML = `<div class="text-red-400 p-4 text-center"><strong>Permissions Denied</strong><br>Camera and microphone access are required.</div>`;
+                alert("Camera and microphone access are required.");
                 throw err;
             }
         };
@@ -190,96 +276,95 @@
         const createRoom = async () => {
             await getLocalMedia().catch(() => {});
             if (!localStream) return;
+            setupInCallControls(true);
 
-            switchToInCallView(true);
             peer = new Peer();
-
             peer.on('open', (id) => {
-                const roomLink = `${window.location.href.split('?')[0]}?room=${id}`;
-                shareLinkInput.value = roomLink;
-                document.getElementById('share-link-container').classList.remove('opacity-0');
-                console.log('PeerJS room created with ID:', id);
+                roomLinkInput.value = `${window.location.href.split('?')[0]}?room=${id}`;
+                roomDialog.style.display = 'block';
 
                 peer.on('call', (call) => {
                     call.answer(localStream);
                     handleIncomingCall(call);
                 });
             });
-             peer.on('error', (err) => {
-                console.error("PeerJS error:", err);
-                placeholder.innerHTML = `<div class="text-red-400 p-4 text-center"><strong>Connection Error</strong><br>Could not connect to the signaling server. Please check your network and refresh.</div>`;
-            });
+            peer.on('error', (err) => alert('Connection Error: ' + err.message));
         };
+        
+        const handleJoinForm = (e) => {
+            e.preventDefault();
+            const url = document.getElementById('join-room-input').value;
+            try {
+                const roomId = new URL(url).searchParams.get('room');
+                if (roomId) joinRoom(roomId);
+                else alert("Invalid room link.");
+            } catch (error) {
+                alert("Please paste a valid room link.");
+            }
+        }
         
         const joinRoom = async (roomId) => {
             await getLocalMedia().catch(() => {});
             if (!localStream) return;
+            setupInCallControls(false);
 
-            switchToInCallView(false);
             peer = new Peer();
-
             peer.on('open', () => {
-                console.log('Joining room:', roomId);
                 const call = peer.call(roomId, localStream);
                 handleIncomingCall(call);
             });
-             peer.on('error', (err) => {
-                console.error("PeerJS error:", err);
-                placeholder.innerHTML = `<div class="text-red-400 p-4 text-center"><strong>Connection Error</strong><br>Could not connect to the signaling server. Please check your network and refresh.</div>`;
-            });
+            peer.on('error', (err) => alert('Connection Error: ' + err.message));
         };
 
         const handleIncomingCall = (call) => {
             currentCall = call;
-            placeholder.classList.add('hidden');
-            
             call.on('stream', (stream) => {
                  const isScreen = stream.getVideoTracks()[0]?.getSettings().displaySurface;
-                 if(isScreen) {
-                    screenVideo.srcObject = stream;
-                    screenStatusDot.classList.add('active');
-                    fullscreenBtn.classList.remove('hidden');
+                 const targetDiv = isScreen ? screenShareDiv : remoteVideoDiv;
+                 targetDiv.innerHTML = ''; 
+                 const video = createVideoElement();
+                 video.srcObject = stream;
+                 if (isScreen) {
+                    targetDiv.append(video);
                  } else {
-                    remoteVideo.srcObject = stream;
-                    remoteVideoContainer.classList.remove('hidden');
-                    updateRemoteCamera(true);
-                    updateRemoteMic(true);
+                    targetDiv.append(video, remoteMicIcon, remoteAvatar);
+                    remoteMicIcon.style.display = 'block';
+                    const audioTrack = stream.getAudioTracks()[0];
+                    if (audioTrack) {
+                         audioTrack.onmute = () => updateRemoteMicUI(false);
+                         audioTrack.onunmute = () => updateRemoteMicUI(true);
+                    }
+                    const videoTrack = stream.getVideoTracks()[0];
+                    if(videoTrack) {
+                        videoTrack.onmute = () => updateRemoteCameraUI(false);
+                        videoTrack.onunmute = () => updateRemoteCameraUI(true);
+                    }
                  }
             });
-
-             call.on('close', hangUp);
+            call.on('close', hangUp);
         };
 
-        const shareScreen = async () => {
-            try {
-                screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-                
-                if (currentCall) {
-                    const screenCall = peer.call(currentCall.peer, screenStream);
-                    screenCall.on('stream', () => {}); 
-                }
+        const toggleScreenShare = async () => {
+            const btn = document.getElementById('share-screen-btn');
+            const isActive = screenStream && screenStream.active;
 
-                screenVideo.srcObject = screenStream;
-                screenStatusDot.classList.add('active');
-                fullscreenBtn.classList.remove('hidden');
-                placeholder.classList.add('hidden');
-                shareScreenBtn.innerHTML = '<i data-lucide="screen-share-off" class="w-5 h-5"></i><span>Stop Sharing</span>';
-                lucide.createIcons();
-                screenStream.getVideoTracks()[0].onended = stopSharingScreen;
-            } catch (err) {
-                console.error("Screen share failed", err);
+            if (isActive) {
+                screenStream.getTracks().forEach(track => track.stop());
+                screenStream = null;
+                screenShareDiv.innerHTML = '<span>Screen share will appear here</span>';
+                btn.innerHTML = `<i data-lucide="screen-share"></i>Share Screen`;
+            } else {
+                try {
+                    screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                    if (currentCall) peer.call(currentCall.peer, screenStream);
+                    screenShareDiv.innerHTML = '';
+                    const video = createVideoElement(true);
+                    video.srcObject = screenStream;
+                    screenShareDiv.append(video);
+                    btn.innerHTML = `<i data-lucide="screen-share-off"></i>Stop Sharing`;
+                    screenStream.getVideoTracks()[0].onended = () => toggleScreenShare();
+                } catch (err) { console.error("Screen share failed", err); }
             }
-        };
-
-        const stopSharingScreen = () => {
-            screenStream?.getTracks().forEach(track => track.stop());
-            screenVideo.srcObject = null;
-            screenStatusDot.classList.remove('active');
-            fullscreenBtn.classList.add('hidden');
-            if (!remoteVideo.srcObject) {
-                placeholder.classList.remove('hidden');
-            }
-            shareScreenBtn.innerHTML = '<i data-lucide="screen-share" class="w-5 h-5"></i><span>Share Screen</span>';
             lucide.createIcons();
         };
 
@@ -290,101 +375,60 @@
             window.location.href = window.location.href.split('?')[0];
         };
 
-        // --- UI Control Functions ---
-        const updateMicUI = (isEnabled) => {
-            micBtn.querySelector('span').textContent = isEnabled ? 'Mute' : 'Unmute';
-            micBtn.querySelector('i').outerHTML = `<i id="mic-icon" data-lucide="${isEnabled ? 'mic' : 'mic-off'}" class="w-5 h-5"></i>`;
-            micStatusDot.classList.toggle('active', isEnabled);
-            
-            // FIX: Robust color change logic
-            micBtn.classList.toggle('bg-gray-700', isEnabled);
-            micBtn.classList.toggle('hover:bg-gray-600', isEnabled);
-            micBtn.classList.toggle('bg-red-600', !isEnabled);
-            micBtn.classList.toggle('hover:bg-red-700', !isEnabled);
-
-            lucide.createIcons();
-        };
-        const updateCameraUI = (isEnabled) => {
-            cameraBtn.querySelector('span').textContent = isEnabled ? 'Stop Camera' : 'Start Camera';
-            cameraBtn.querySelector('i').outerHTML = `<i id="camera-icon" data-lucide="${isEnabled ? 'video' : 'video-off'}" class="w-5 h-5"></i>`;
-            localVideo.classList.toggle('hidden', !isEnabled);
-            localAvatar.classList.toggle('hidden', isEnabled);
-            localVideoContainer.classList.toggle('cam-off', !isEnabled);
-            camStatusDot.classList.toggle('active', isEnabled);
-            lucide.createIcons();
-        };
         const toggleMic = () => {
             const track = localStream?.getAudioTracks()[0];
+            const btn = document.getElementById('mic-btn');
             if (track) {
                 track.enabled = !track.enabled;
-                updateMicUI(track.enabled);
+                const isEnabled = track.enabled;
+                btn.innerHTML = `<i data-lucide="${isEnabled ? 'mic' : 'mic-off'}"></i>${isEnabled ? 'Mute' : 'Unmute'}`;
+                btn.classList.toggle('red', !isEnabled);
+                localMicIcon.querySelector('i').outerHTML = `<i data-lucide="${isEnabled ? 'mic' : 'mic-off'}" class="w-4 h-4 text-white"></i>`;
             }
+            lucide.createIcons();
         };
+
         const toggleCamera = () => {
             const track = localStream?.getVideoTracks()[0];
+            const btn = document.getElementById('camera-btn');
             if (track) {
                 track.enabled = !track.enabled;
-                updateCameraUI(track.enabled);
+                const isEnabled = track.enabled;
+                btn.innerHTML = `<i data-lucide="${isEnabled ? 'video' : 'video-off'}"></i>${isEnabled ? 'Stop Camera' : 'Start Camera'}`;
+                localVideoDiv.querySelector('video').style.display = isEnabled ? 'block' : 'none';
+                localAvatar.style.display = isEnabled ? 'none' : 'flex';
             }
-        };
-        const updateRemoteCamera = (isOn) => {
-            remoteVideo.classList.toggle('hidden', !isOn);
-            remoteAvatar.classList.toggle('hidden', isOn);
-            remoteVideoContainer.classList.toggle('cam-off', !isOn);
-        };
-        const updateRemoteMic = (isUnmuted) => {
-            remoteMicIcon.outerHTML = `<i id="remote-mic-icon" data-lucide="${isUnmuted ? 'mic' : 'mic-off'}" class="w-4 h-4 text-white"></i>`;
             lucide.createIcons();
         };
-        
-        // --- Event Listeners ---
-        createRoomBtn.addEventListener('click', createRoom);
-        joinRoomForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const url = document.getElementById('join-room-input').value;
-            try {
-                const joinRoomId = new URL(url).searchParams.get('room');
-                if (joinRoomId) joinRoom(joinRoomId);
-                else alert("Invalid room link.");
-            } catch (error) { alert("Please paste a valid room link."); }
-        });
-        shareScreenBtn.addEventListener('click', () => {
-            if (screenStream && screenStream.active) stopSharingScreen();
-            else shareScreen();
-        });
-        hangupBtn.addEventListener('click', hangUp);
-        micBtn.addEventListener('click', toggleMic);
-        cameraBtn.addEventListener('click', toggleCamera);
-        fullscreenBtn.addEventListener('click', () => document.getElementById('stream-container').requestFullscreen());
+
+        const updateRemoteMicUI = (isEnabled) => {
+             remoteMicIcon.querySelector('i').outerHTML = `<i data-lucide="${isEnabled ? 'mic' : 'mic-off'}" class="w-4 h-4 text-white"></i>`;
+             lucide.createIcons();
+        };
+        const updateRemoteCameraUI = (isEnabled) => {
+            remoteVideoDiv.querySelector('video').style.display = isEnabled ? 'block' : 'none';
+            remoteAvatar.style.display = isEnabled ? 'none' : 'flex';
+        };
+
+        // Event Listeners
         copyLinkBtn.addEventListener('click', () => {
-            shareLinkInput.select();
+            roomLinkInput.select();
             document.execCommand('copy');
-            copySuccess.classList.remove('hidden');
-            setTimeout(() => copySuccess.classList.add('hidden'), 2000);
+            alert('Link copied to clipboard!');
+        });
+        closeDialogBtn.addEventListener('click', () => {
+            roomDialog.style.display = 'none';
         });
 
-        // --- Draggable Camera ---
-        let isDragging = false, xOffset = 0, yOffset = 0, initialX, initialY;
-        localVideoContainer.addEventListener("mousedown", e => {
-            isDragging = true;
-            initialX = e.clientX - xOffset;
-            initialY = e.clientY - yOffset;
-        });
-        document.addEventListener("mouseup", () => isDragging = false);
-        document.addEventListener("mousemove", e => {
-            if(isDragging) {
-                e.preventDefault();
-                xOffset = e.clientX - initialX;
-                yOffset = e.clientY - initialY;
-                localVideoContainer.style.transform = `translate3d(${xOffset}px, ${yOffset}px, 0)`;
-            }
-        });
-
-        // --- Page Load Logic ---
+        // Initial Setup
         window.addEventListener('load', () => {
             lucide.createIcons();
-            const joinRoomId = new URLSearchParams(window.location.search).get('room');
-            if (joinRoomId) joinRoom(joinRoomId).catch(console.error);
+            const roomId = new URLSearchParams(window.location.search).get('room');
+            if (roomId) {
+                joinRoom(roomId).catch(console.error);
+            } else {
+                setupInitialControls();
+            }
         });
     </script>
 </body>
