@@ -507,6 +507,9 @@
             setupCallListeners();
         };
 
+        // =================================================================
+        // THIS IS THE CORRECTED FUNCTION
+        // =================================================================
         const handleEstablishedCall = (call) => {
             if (!call) {
                 showToast("Failed to initiate call. Please refresh.", "error");
@@ -515,7 +518,8 @@
             }
             currentCall = call;
 
-            // THIS IS THE FIX: Listen for the host's nickname
+            // THIS LISTENER IS THE CRITICAL FIX
+            // It waits for the other user to send their data (nickname)
             call.on('data', (data) => {
                 if (data.nickname) {
                     const remoteNickname = data.nickname;
@@ -540,6 +544,7 @@
                     };
                 });
             });
+            
             call.on('close', hangUp);
         };
         
