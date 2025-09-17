@@ -319,37 +319,37 @@
         const handleIncomingCall = (call) => {
             currentCall = call;
 
-            const peerConnection = call.peerConnection;
-            peerConnection.ontrack = (event) => {
-                const stream = event.streams[0];
-                const track = event.track;
+            call.on('stream', (remoteUserStream) => {
+                remoteVideoDiv.innerHTML = '';
+                const video = createVideoElement();
+                video.srcObject = remoteUserStream;
+                remoteVideoDiv.append(video, remoteMicIcon, remoteAvatar);
+                remoteMicIcon.style.display = 'block';
 
-                const isScreen = track.kind === 'video' && 'displaySurface' in track.getSettings();
-
-                if(isScreen) {
-                    screenShareDiv.innerHTML = '';
-                    const video = createVideoElement();
-                    video.srcObject = new MediaStream([track]);
-                    screenShareDiv.append(video);
-                } else {
-                    remoteVideoDiv.innerHTML = '';
-                    const video = createVideoElement();
-                    video.srcObject = stream;
-                    remoteVideoDiv.append(video, remoteMicIcon, remoteAvatar);
-                    remoteMicIcon.style.display = 'block';
-
-                    const audioTrack = stream.getAudioTracks()[0];
-                    if (audioTrack) {
-                         audioTrack.onmute = () => updateRemoteMicUI(false);
-                         audioTrack.onunmute = () => updateRemoteMicUI(true);
-                    }
-                    const videoTrack = stream.getVideoTracks()[0];
-                    if(videoTrack) {
-                        videoTrack.onmute = () => updateRemoteCameraUI(false);
-                        videoTrack.onunmute = () => updateRemoteCameraUI(true);
-                    }
+                const audioTrack = remoteUserStream.getAudioTracks()[0];
+                if (audioTrack) {
+                    updateRemoteMicUI(audioTrack.enabled);
+                    audioTrack.onmute = () => updateRemoteMicUI(false);
+                    audioTrack.onunmute = () => updateRemoteMicUI(true);
                 }
-            };
+                const videoTrack = remoteUserStream.getVideoTracks()[0];
+                if(videoTrack) {
+                    updateRemoteCameraUI(videoTrack.enabled);
+                    videoTrack.onmute = () => updateRemoteCameraUI(false);
+                    videoTrack.onunmute = () => updateRemoteCameraUI(true);
+                }
+            });
+            
+            // This is the new, dedicated listener for added tracks like screen share
+            call.peerConnection.addEventListener('track', (event) => {
+                const track = event.track;
+                if (track.kind === 'video' && 'displaySurface' in track.getSettings()) {
+                     screenShareDiv.innerHTML = '';
+                     const video = createVideoElement();
+                     video.srcObject = new MediaStream([track]);
+                     screenShareDiv.append(video);
+                }
+            });
 
             call.on('close', hangUp);
         };
@@ -359,7 +359,6 @@
             const isActive = screenStream && screenStream.active;
 
             if (isActive) {
-                // Stop sharing
                 screenStream.getTracks().forEach(track => track.stop());
                 screenStream = null;
                 if(screenTrackSender) {
@@ -369,7 +368,6 @@
                 screenShareDiv.innerHTML = '<span>Screen share will appear here</span>';
                 btn.innerHTML = `<i data-lucide="screen-share"></i>Share Screen`;
             } else {
-                // Start sharing
                 try {
                     screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
                     const screenTrack = screenStream.getVideoTracks()[0];
@@ -388,7 +386,6 @@
             }
             lucide.createIcons();
         };
-
 
         const hangUp = () => {
             peer?.destroy();
@@ -432,7 +429,6 @@
             remoteAvatar.style.display = isEnabled ? 'none' : 'flex';
         };
 
-        // Event Listeners
         copyLinkBtn.addEventListener('click', () => {
             roomLinkInput.select();
             document.execCommand('copy');
@@ -442,7 +438,6 @@
             roomDialog.style.display = 'none';
         });
 
-        // Initial Setup
         window.addEventListener('load', () => {
             lucide.createIcons();
             const roomId = new URLSearchParams(window.location.search).get('room');
