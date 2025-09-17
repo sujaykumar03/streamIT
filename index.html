@@ -12,7 +12,6 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
     <style>
-        /* --- CSS Variables for Theme --- */
         :root {
             --dark-bg: #121212;
             --medium-bg: #1e1e1e;
@@ -23,10 +22,10 @@
             --accent-blue-hover: #2563eb;
             --accent-red: #ef4444;
             --accent-red-hover: #dc2626;
+            --accent-green: #22c55e;
             --border-color: #333333;
         }
 
-        /* --- General & Theme --- */
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             background-color: var(--dark-bg);
@@ -66,18 +65,16 @@
             font-weight: 500;
         }
         
-        /* --- Layout & Responsiveness --- */
         .main-content {
             display: flex;
             flex: 1;
             min-height: 0;
-            /* Mobile-first: column layout */
             flex-direction: column;
             gap: 1rem;
         }
 
         .screen-share-container {
-            flex: 1; /* Take up remaining space */
+            flex: 1;
             display: flex;
         }
 
@@ -97,10 +94,9 @@
         
         .cams-sidebar {
             display: flex;
-            /* Mobile: horizontal row */
             flex-direction: row;
             gap: 1rem;
-            max-height: 150px; /* Limit height on mobile */
+            max-height: 150px;
         }
 
         .cam-wrapper {
@@ -123,23 +119,12 @@
             transition: border-color 0.3s;
         }
         
-        /* Desktop layout adjustments */
         @media (min-width: 800px) {
-            .main-content {
-                flex-direction: row;
-                gap: 1.5rem;
-            }
-            .screen-share-container {
-                flex: 4;
-            }
-            .cams-sidebar {
-                flex: 1;
-                flex-direction: column;
-                max-height: none;
-            }
+            .main-content { flex-direction: row; gap: 1.5rem; }
+            .screen-share-container { flex: 4; }
+            .cams-sidebar { flex: 1; flex-direction: column; max-height: none; }
         }
 
-        /* --- Floating Control Bar --- */
         .controls {
             position: fixed;
             bottom: 1.5rem;
@@ -174,25 +159,27 @@
             margin: 0;
         }
 
-        .controls button:hover {
-            background-color: #3a3a3a;
-        }
-        .controls button:active {
-            transform: scale(0.95);
-        }
-
-        .controls button.red { background-color: var(--accent-red); border-color: var(--accent-red);}
+        .controls button:hover { background-color: #3a3a3a; }
+        .controls button:active { transform: scale(0.95); }
+        .controls button.red { background-color: var(--accent-red); border-color: var(--accent-red); }
         .controls button.red:hover { background-color: var(--accent-red-hover); }
 
-        /* --- Initial Join Form --- */
-        #join-room-form, #initial-controls {
+        #initial-controls {
             display: flex;
             align-items: center;
             justify-content: center;
             padding-top: 2rem;
+            gap: 1rem;
+            width: 100%;
+        }
+        #initial-controls .separator {
+            color: var(--text-secondary);
+        }
+        #initial-controls form {
+            display: inline-flex;
             gap: 0.5rem;
         }
-        #join-room-form input, #initial-controls input {
+        #initial-controls input {
             padding: 10px 14px;
             border-radius: 8px;
             border: 1px solid var(--border-color);
@@ -200,38 +187,59 @@
             color: var(--text-primary);
             font-size: 1rem;
         }
-        #join-room-form button, #initial-controls button {
+        #initial-controls button {
             background-color: var(--accent-blue);
             border-radius: 8px;
             padding: 10px 20px;
         }
-        #join-room-form button:hover, #initial-controls button:hover {
-            background-color: var(--accent-blue-hover);
-        }
+        #initial-controls button:hover { background-color: var(--accent-blue-hover); }
         
-        /* --- Other Components --- */
         video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
         #screenShare video { object-fit: contain; transform: scaleX(1); }
         .mic-status-icon { position: absolute; top: 8px; left: 10px; background-color: rgba(0,0,0,0.5); border-radius: 50%; padding: 4px; z-index: 2; }
         .animal-avatar { width: 40%; height: 40%; min-width: 50px; }
         .animal-avatar #body { animation: breathing 3s ease-in-out infinite; }
         @keyframes breathing { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
-        .dialog { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 2rem; background-color: #e8f0fe; border: 1px solid #d2e3fc; border-radius: 8px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.1); z-index: 1000; color: #333;}
+        .dialog { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 2rem; background-color: #e8f0fe; border: 1px solid #d2e3fc; border-radius: 8px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.1); z-index: 1000; color: #333; }
         .dialog input { width: 100%; max-width: 400px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; margin: 1rem 0; }
         .dialog button { background-color: #34a853; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
+
+        /* --- Toast Notification System --- */
+        #toast-container {
+            position: fixed;
+            top: 1.5rem;
+            right: 1.5rem;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .toast {
+            padding: 10px 20px;
+            border-radius: 8px;
+            color: white;
+            font-size: 0.9rem;
+            font-weight: 500;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            animation: fadeInOut 3s forwards;
+        }
+        .toast.success { background-color: var(--accent-green); }
+        .toast.error { background-color: var(--accent-red); }
+        .toast.info { background-color: var(--accent-blue); }
+        @keyframes fadeInOut {
+            0%, 100% { opacity: 0; transform: translateY(-20px); }
+            10%, 90% { opacity: 1; transform: translateY(0); }
+        }
     </style>
 </head>
 <body>
+    <div id="toast-container"></div>
     <div class="container">
         <h1>PeerStream 📹</h1>
-        
         <div class="main-content">
             <div class="screen-share-container">
-                <div id="screenShare" class="screen-placeholder">
-                    <span>Screen share will appear here</span>
-                </div>
+                <div id="screenShare" class="screen-placeholder"><span>Screen share will appear here</span></div>
             </div>
-
             <div class="cams-sidebar">
                 <div class="cam-wrapper">
                     <h2>Your Video</h2>
@@ -253,10 +261,7 @@
                 </div>
             </div>
         </div>
-
-        <div class="controls" id="controls">
-            </div>
-
+        <div class="controls" id="controls"></div>
         <div id="roomDialog" class="dialog" style="display:none;">
             <h3>Room Created!</h3>
             <p>Share this link with your friend:</p>
@@ -286,6 +291,17 @@
         let screenStream;
         let currentCall;
         let screenCall;
+        
+        const showToast = (message, type = 'info') => {
+            const toastContainer = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            toastContainer.appendChild(toast);
+            setTimeout(() => {
+                toast.remove();
+            }, 3000);
+        };
 
         const createVideoElement = (muted = false) => {
             const video = document.createElement('video');
@@ -299,8 +315,8 @@
             controlsDiv.innerHTML = `
                 <div id="initial-controls">
                     <button id="create-room-btn"><i data-lucide="plus-square"></i>Create Room</button>
-                    <span style="color: var(--text-secondary);">or</span>
-                    <form id="join-room-form" style="display: inline-flex;">
+                    <span class="separator">or</span>
+                    <form id="join-room-form">
                         <input type="text" id="join-room-input" placeholder="Paste Room Link">
                         <button type="submit"><i data-lucide="log-in"></i>Join Room</button>
                     </form>
@@ -342,7 +358,7 @@
                 localMicIcon.style.display = 'block';
             } catch (err) {
                 console.error("Failed to get local media", err);
-                alert("Camera and microphone access are required to use this app.");
+                showToast("Camera and microphone access are required.", "error");
                 throw err;
             }
         };
@@ -370,8 +386,12 @@
             });
             
             peer.on('disconnected', () => {
-                alert('Connection to the server has been lost. Please refresh.');
+                showToast('Connection to the server has been lost.', 'error');
                 hangUp();
+            });
+             peer.on('error', (err) => {
+                console.error('PeerJS Error:', err);
+                showToast(`Connection error: ${err.type}`, 'error');
             });
         };
 
@@ -391,8 +411,6 @@
                 roomLinkInput.value = `${window.location.origin}${window.location.pathname}?room=${id}`;
                 roomDialog.style.display = 'block';
             });
-
-            peer.on('error', (err) => alert('Connection Error: ' + err.message));
             setupCallListeners();
         };
         
@@ -400,7 +418,7 @@
             e.preventDefault();
             const url = document.getElementById('join-room-input').value;
             if (!url) {
-                alert("Please paste a room link.");
+                showToast("Please paste a room link.", "error");
                 return;
             }
             try {
@@ -409,10 +427,10 @@
                     controlsDiv.innerHTML = "<h4 style='color: var(--text-secondary); font-weight: 500;'>Joining room...</h4>";
                     joinRoom(roomId);
                 } else {
-                    alert("This does not appear to be a valid room link.");
+                    showToast("This does not appear to be a valid room link.", "error");
                 }
             } catch (error) {
-                alert("Invalid room link format.");
+                showToast("Invalid room link format.", "error");
             }
         }
         
@@ -431,20 +449,18 @@
                 const call = peer.call(roomId, localStream, { metadata: { type: 'video' } });
                 
                 call.on('error', (err) => {
-                    alert("Failed to connect. The room ID may be invalid or the host has disconnected.");
+                    showToast("Failed to connect. The room ID may be invalid.", "error");
                     window.location.href = window.location.pathname;
                 });
 
                 handleEstablishedCall(call);
             });
-
-            peer.on('error', (err) => alert('Connection Error: ' + err.message));
             setupCallListeners();
         };
 
         const handleEstablishedCall = (call) => {
             if (!call) {
-                alert("Failed to connect to the room. The host may have left. Please refresh.");
+                showToast("Failed to initiate call. Please refresh.", "error");
                 hangUp();
                 return;
             }
@@ -521,6 +537,7 @@
                     };
                 } catch (err) {
                     console.error("Screen share failed", err);
+                    showToast("Could not start screen share.", "error");
                     btn.innerHTML = `<i data-lucide="screen-share"></i>`;
                     lucide.createIcons();
                 }
@@ -573,9 +590,10 @@
 
         copyLinkBtn.addEventListener('click', () => {
             navigator.clipboard.writeText(roomLinkInput.value).then(() => {
-                alert('Link copied to clipboard!');
+                showToast('Link copied to clipboard!', 'success');
             }).catch(err => {
                 console.error('Failed to copy: ', err);
+                showToast('Failed to copy link.', 'error');
             });
         });
         closeDialogBtn.addEventListener('click', () => {
