@@ -405,44 +405,58 @@
             });
         };
         
-        const toggleScreenShare = async () => {
-            const btn = document.getElementById('share-screen-btn');
-            if (!btn) return;
-            const isActive = screenStream && screenStream.active;
+       const toggleScreenShare = async () => {
+    const btn = document.getElementById('share-screen-btn');
+    if (!btn) return;
+    const isActive = screenStream && screenStream.active;
 
-            if (isActive) {
-                screenStream.getTracks().forEach(track => track.stop());
-                screenStream = null;
-                screenCall?.close();
-                screenCall = null;
-                screenShareDiv.innerHTML = '<span>Screen share will appear here</span>';
-                btn.innerHTML = `<i data-lucide="screen-share"></i>Share Screen`;
-            } else {
-                try {
-                    screenStream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always" }, audio: false });
-                    const screenTrack = screenStream.getVideoTracks()[0];
+    if (isActive) {
+        screenStream.getTracks().forEach(track => track.stop());
+        screenStream = null;
+        screenCall?.close();
+        screenCall = null;
+        screenShareDiv.innerHTML = '<span>Screen share will appear here</span>';
+        btn.innerHTML = `<i data-lucide="screen-share"></i>Share Screen`;
+    } else {
+        try {
+            // Define the new, optimized constraints for high-performance screen sharing
+            const displayMediaOptions = {
+                video: {
+                    cursor: "always",
+                    frameRate: 30,          // Request a higher frame rate (e.g., 30) for fluid motion
+                    latencyHint: "interactive", // Prioritize low latency to keep the stream "in sync"
+                    contentHint: "motion"       // Optimize for sharing video or fast-moving content
+                },
+                audio: false
+            };
+            
+            // Apply the new constraints when capturing the screen
+            screenStream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
+            
+            const screenTrack = screenStream.getVideoTracks()[0];
 
-                    if (currentCall) {
-                        screenCall = peer.call(currentCall.peer, screenStream, { metadata: { type: 'screen' } });
-                    }
-                    
-                    screenShareDiv.innerHTML = '';
-                    const video = createVideoElement(true);
-                    video.srcObject = screenStream;
-                    screenShareDiv.append(video);
-                    btn.innerHTML = `<i data-lucide="screen-share-off"></i>Stop Sharing`;
-                    
-                    // Listen for the user stopping the share via browser controls
-                    screenTrack.onended = () => {
-                       if (document.getElementById('share-screen-btn')) toggleScreenShare();
-                    };
-                } catch (err) {
-                    console.error("Screen share failed", err);
-                    btn.innerHTML = `<i data-lucide="screen-share"></i>Share Screen`;
-                }
+            if (currentCall) {
+                screenCall = peer.call(currentCall.peer, screenStream, { metadata: { type: 'screen' } });
             }
-            lucide.createIcons();
-        };
+            
+            screenShareDiv.innerHTML = '';
+            const video = createVideoElement(true);
+            video.srcObject = screenStream;
+            screenShareDiv.append(video);
+            btn.innerHTML = `<i data-lucide="screen-share-off"></i>Stop Sharing`;
+            
+            // Listen for the user stopping the share via browser controls
+            screenTrack.onended = () => {
+                if (document.getElementById('share-screen-btn')) toggleScreenShare();
+            };
+        } catch (err) {
+            console.error("Screen share failed", err);
+            btn.innerHTML = `<i data-lucide="screen-share"></i>Share Screen`;
+        }
+    }
+    lucide.createIcons();
+};
+    
 
         const hangUp = () => {
             peer?.destroy();
