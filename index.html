@@ -113,19 +113,19 @@
                  <p id="copy-success" class="text-green-400 text-xs mt-1 hidden">Copied!</p>
             </div>
             <div class="flex items-center justify-center space-x-2 md:space-x-4">
-                <button id="share-screen-btn" class="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all duration-200">
+                <button id="share-screen-btn" class="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition-all duration-200">
                     <i data-lucide="screen-share" class="w-5 h-5"></i>
                     <span>Share Screen</span>
                 </button>
-                <button id="camera-btn" class="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all duration-200">
+                <button id="camera-btn" class="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition-all duration-200">
                     <i id="camera-icon" data-lucide="video" class="w-5 h-5"></i>
                     <span id="camera-text">Stop Camera</span>
                 </button>
-                <button id="mic-btn" class="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all duration-200">
+                <button id="mic-btn" class="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition-all duration-200">
                     <i id="mic-icon" data-lucide="mic" class="w-5 h-5"></i>
                     <span id="mic-text">Mute</span>
                 </button>
-                 <button id="hangup-btn" class="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all duration-200">
+                 <button id="hangup-btn" class="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition-all duration-200">
                     <i data-lucide="phone-off" class="w-5 h-5"></i>
                     <span>End Call</span>
                 </button>
@@ -253,13 +253,10 @@
         const shareScreen = async () => {
             try {
                 screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-                const screenTrack = screenStream.getVideoTracks()[0];
-                const audioTrack = screenStream.getAudioTracks()[0];
                 
-                // Call the remote peer with the new screen stream
                 if (currentCall) {
                     const screenCall = peer.call(currentCall.peer, screenStream);
-                    screenCall.on('stream', () => {}); // Handle if they send something back on this call
+                    screenCall.on('stream', () => {}); 
                 }
 
                 screenVideo.srcObject = screenStream;
@@ -268,7 +265,7 @@
                 placeholder.classList.add('hidden');
                 shareScreenBtn.innerHTML = '<i data-lucide="screen-share-off" class="w-5 h-5"></i><span>Stop Sharing</span>';
                 lucide.createIcons();
-                screenTrack.onended = stopSharingScreen;
+                screenStream.getVideoTracks()[0].onended = stopSharingScreen;
             } catch (err) {
                 console.error("Screen share failed", err);
             }
@@ -298,6 +295,15 @@
             micBtn.querySelector('span').textContent = isEnabled ? 'Mute' : 'Unmute';
             micBtn.querySelector('i').outerHTML = `<i id="mic-icon" data-lucide="${isEnabled ? 'mic' : 'mic-off'}" class="w-5 h-5"></i>`;
             micStatusDot.classList.toggle('active', isEnabled);
+            
+            // Color change logic
+            if(isEnabled) {
+                micBtn.classList.remove('bg-red-600', 'hover:bg-red-700');
+                micBtn.classList.add('bg-gray-700', 'hover:bg-gray-600');
+            } else {
+                micBtn.classList.remove('bg-gray-700', 'hover:bg-gray-600');
+                micBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+            }
             lucide.createIcons();
         };
         const updateCameraUI = (isEnabled) => {
