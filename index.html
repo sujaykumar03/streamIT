@@ -203,7 +203,7 @@
     </div>
 
     <script>
-        const controlsDiv = document.getElementById('controls');
+const controlsDiv = document.getElementById('controls');
         const screenShareDiv = document.getElementById('screenShare');
         const localVideoDiv = document.getElementById('localVideo');
         const remoteVideoDiv = document.getElementById('remoteVideo');
@@ -220,7 +220,7 @@
         let localStream;
         let screenStream;
         let currentCall;
-        let screenTrackSender;
+        let screenCall; // NEW: To hold the screen share call object
 
         const createVideoElement = (muted = false) => {
             const video = document.createElement('video');
@@ -272,23 +272,48 @@
                 throw err;
             }
         };
+        
+        // MODIFIED: This function now initializes the peer connection and sets up all listeners.
+        const initializePeer = (peerId) => {
+            peer = peerId ? new Peer(peerId) : new Peer();
+
+            peer.on('open', (id) => {
+                if (!peerId) { // This is the host creating the room
+                    roomLinkInput.value = `${window.location.href.split('?')[0]}?room=${id}`;
+                    roomDialog.style.display = 'block';
+                }
+            });
+            
+            // This single listener now handles both camera and screen share calls
+            peer.on('call', (call) => {
+                const callType = call.metadata?.type;
+                
+                if (callType === 'screen') {
+                    call.answer(); // No stream needed to answer, we just want to receive
+                    call.on('stream', (remoteScreenStream) => {
+                        screenShareDiv.innerHTML = '';
+                        const video = createVideoElement();
+                        video.srcObject = remoteScreenStream;
+                        screenShareDiv.append(video);
+                    });
+                    call.on('close', () => {
+                         screenShareDiv.innerHTML = '<span>Screen share has ended</span>';
+                    });
+                    screenCall = call;
+                } else { // Default is the main video/audio call
+                    call.answer(localStream);
+                    handleIncomingCall(call);
+                }
+            });
+
+            peer.on('error', (err) => alert('Connection Error: ' + err.message));
+        };
 
         const createRoom = async () => {
             await getLocalMedia().catch(() => {});
             if (!localStream) return;
             setupInCallControls(true);
-
-            peer = new Peer();
-            peer.on('open', (id) => {
-                roomLinkInput.value = `${window.location.href.split('?')[0]}?room=${id}`;
-                roomDialog.style.display = 'block';
-
-                peer.on('call', (call) => {
-                    call.answer(localStream);
-                    handleIncomingCall(call);
-                });
-            });
-            peer.on('error', (err) => alert('Connection Error: ' + err.message));
+            initializePeer(); // Host initializes peer without an ID
         };
         
         const handleJoinForm = (e) => {
@@ -307,13 +332,13 @@
             await getLocalMedia().catch(() => {});
             if (!localStream) return;
             setupInCallControls(false);
+            initializePeer(); // Guest also initializes peer, will get their own ID
 
-            peer = new Peer();
-            peer.on('open', () => {
-                const call = peer.call(roomId, localStream);
+            // We need a brief moment for the peer to initialize before calling
+            setTimeout(() => {
+                const call = peer.call(roomId, localStream, { metadata: { type: 'video' } });
                 handleIncomingCall(call);
-            });
-            peer.on('error', (err) => alert('Connection Error: ' + err.message));
+            }, 500);
         };
 
         const handleIncomingCall = (call) => {
@@ -329,31 +354,22 @@
                 const audioTrack = remoteUserStream.getAudioTracks()[0];
                 if (audioTrack) {
                     updateRemoteMicUI(audioTrack.enabled);
-                    audioTrack.onmute = () => updateRemoteMicUI(false);
-                    audioTrack.onunmute = () => updateRemoteMicUI(true);
+                    // Using 'mute' and 'unmute' events on tracks is more reliable
+                    audioTrack.addEventListener('mute', () => updateRemoteMicUI(false));
+                    audioTrack.addEventListener('unmute', () => updateRemoteMicUI(true));
                 }
                 const videoTrack = remoteUserStream.getVideoTracks()[0];
                 if(videoTrack) {
                     updateRemoteCameraUI(videoTrack.enabled);
-                    videoTrack.onmute = () => updateRemoteCameraUI(false);
-                    videoTrack.onunmute = () => updateRemoteCameraUI(true);
+                    videoTrack.addEventListener('mute', () => updateRemoteCameraUI(false));
+                    videoTrack.addEventListener('unmute', () => updateRemoteCameraUI(true));
                 }
             });
             
-            // This is the new, dedicated listener for added tracks like screen share
-            call.peerConnection.addEventListener('track', (event) => {
-                const track = event.track;
-                if (track.kind === 'video' && 'displaySurface' in track.getSettings()) {
-                     screenShareDiv.innerHTML = '';
-                     const video = createVideoElement();
-                     video.srcObject = new MediaStream([track]);
-                     screenShareDiv.append(video);
-                }
-            });
-
             call.on('close', hangUp);
         };
         
+        // MODIFIED: Big changes here to use a new call for screen sharing
         const toggleScreenShare = async () => {
             const btn = document.getElementById('share-screen-btn');
             const isActive = screenStream && screenStream.active;
@@ -361,10 +377,8 @@
             if (isActive) {
                 screenStream.getTracks().forEach(track => track.stop());
                 screenStream = null;
-                if(screenTrackSender) {
-                    currentCall.peerConnection.removeTrack(screenTrackSender);
-                    screenTrackSender = null;
-                }
+                screenCall?.close(); // Close the specific screen share call
+                screenCall = null;
                 screenShareDiv.innerHTML = '<span>Screen share will appear here</span>';
                 btn.innerHTML = `<i data-lucide="screen-share"></i>Share Screen`;
             } else {
@@ -373,7 +387,8 @@
                     const screenTrack = screenStream.getVideoTracks()[0];
 
                     if (currentCall) {
-                       screenTrackSender = currentCall.peerConnection.addTrack(screenTrack, screenStream);
+                        // Start a NEW call for the screen share stream
+                        screenCall = peer.call(currentCall.peer, screenStream, { metadata: { type: 'screen' } });
                     }
                     
                     screenShareDiv.innerHTML = '';
@@ -381,7 +396,13 @@
                     video.srcObject = screenStream;
                     screenShareDiv.append(video);
                     btn.innerHTML = `<i data-lucide="screen-share-off"></i>Stop Sharing`;
-                    screenStream.getVideoTracks()[0].onended = () => toggleScreenShare();
+                    
+                    // Listen for the user stopping the share via browser controls
+                    screenTrack.onended = () => {
+                        if (screenCall) { // Check if we are still in a call
+                           toggleScreenShare(); // This will trigger the cleanup logic
+                        }
+                    };
                 } catch (err) { console.error("Screen share failed", err); }
             }
             lucide.createIcons();
@@ -425,7 +446,8 @@
              lucide.createIcons();
         };
         const updateRemoteCameraUI = (isEnabled) => {
-            remoteVideoDiv.querySelector('video').style.display = isEnabled ? 'block' : 'none';
+            const remoteVideo = remoteVideoDiv.querySelector('video');
+            if (remoteVideo) remoteVideo.style.display = isEnabled ? 'block' : 'none';
             remoteAvatar.style.display = isEnabled ? 'none' : 'flex';
         };
 
@@ -442,6 +464,8 @@
             lucide.createIcons();
             const roomId = new URLSearchParams(window.location.search).get('room');
             if (roomId) {
+                // To avoid showing the "Join Room" form briefly, we set up controls inside joinRoom now
+                document.getElementById('controls').innerHTML = "<h4>Connecting...</h4>";
                 joinRoom(roomId).catch(console.error);
             } else {
                 setupInitialControls();
