@@ -135,7 +135,7 @@
             align-items: center;
             padding-top: 1.5rem;
             width: 100%;
-            height: 82px; /* Reserve space for the control bar */
+            height: 82px; 
         }
         
         .control-bar {
@@ -327,9 +327,7 @@
             toast.className = `toast ${type}`;
             toast.textContent = message;
             toastContainer.appendChild(toast);
-            setTimeout(() => {
-                toast.remove();
-            }, 3000);
+            setTimeout(() => { toast.remove(); }, 3000);
         };
 
         const createVideoElement = (muted = false) => {
@@ -376,11 +374,7 @@
         const setupInCallControls = (isHost = false) => {
             controlsDiv.innerHTML = ''; 
             controlsDiv.className = 'control-bar';
-
-            let hostControls = isHost 
-                ? `<button id="share-screen-btn" title="Share Screen"><i data-lucide="screen-share"></i></button>`
-                : '';
-
+            let hostControls = isHost ? `<button id="share-screen-btn" title="Share Screen"><i data-lucide="screen-share"></i></button>` : '';
             controlsDiv.innerHTML = `
                 <button id="mic-btn" title="Mute/Unmute"><i data-lucide="mic"></i></button>
                 <button id="camera-btn" title="Stop/Start Camera"><i data-lucide="video"></i></button>
@@ -388,7 +382,6 @@
                 <button id="hangup-btn" class="red" title="End Call"><i data-lucide="phone-off"></i></button>
             `;
             lucide.createIcons();
-            
             if (isHost) document.getElementById('share-screen-btn').addEventListener('click', toggleScreenShare);
             document.getElementById('mic-btn').addEventListener('click', toggleMic);
             document.getElementById('camera-btn').addEventListener('click', toggleCamera);
@@ -414,7 +407,6 @@
         const setupCallListeners = () => {
             peer.on('call', (call) => {
                 const callType = call.metadata?.type;
-                
                 if (callType === 'screen') {
                     call.answer();
                     call.on('stream', (remoteScreenStream) => {
@@ -428,21 +420,18 @@
                 } else { 
                     const remoteNickname = call.metadata.nickname;
                     remoteVideoWrapper.querySelector('h2').textContent = remoteNickname;
-                    
                     call.on('open', () => {
                         call.send({ nickname: localNickname });
                     });
-
                     call.answer(localStream);
                     handleEstablishedCall(call);
                 }
             });
-            
             peer.on('disconnected', () => {
                 showToast('Connection to the server has been lost.', 'error');
                 hangUp();
             });
-             peer.on('error', (err) => {
+            peer.on('error', (err) => {
                 console.error('PeerJS Error:', err);
                 showToast(`Connection error: ${err.type}`, 'error');
             });
@@ -454,7 +443,6 @@
                 showToast("Please enter a nickname.", "error");
                 return;
             }
-
             controlsDiv.innerHTML = '<h4 style="color: var(--text-secondary); font-weight: 500;">Creating room...</h4>';
             try {
                 await getLocalMedia();
@@ -462,11 +450,9 @@
                 setupInitialControls();
                 return;
             }
-            
             localVideoWrapper.querySelector('h2').textContent = `${localNickname} (You)`;
             setupInCallControls(true);
             peer = new Peer(); 
-            
             peer.on('open', (id) => {
                 roomLinkInput.value = `${window.location.origin}${window.location.pathname}?room=${id}`;
                 roomDialog.style.display = 'block';
@@ -480,7 +466,6 @@
                 showToast("Please enter a nickname.", "error");
                 return;
             }
-            
             const url = document.getElementById('join-room-input').value;
             if (!url) {
                 showToast("Please paste a room link.", "error");
@@ -506,21 +491,17 @@
                 window.location.href = window.location.pathname;
                 return;
             }
-            
             localVideoWrapper.querySelector('h2').textContent = `${localNickname} (You)`;
             setupInCallControls(false);
             peer = new Peer();
-
             peer.on('open', () => {
                 const call = peer.call(roomId, localStream, { 
                     metadata: { nickname: localNickname, type: 'video' } 
                 });
-                
                 call.on('error', (err) => {
                     showToast("Failed to connect. The room ID may be invalid.", "error");
                     window.location.href = window.location.pathname;
                 });
-
                 handleEstablishedCall(call);
             });
             setupCallListeners();
@@ -534,6 +515,7 @@
             }
             currentCall = call;
 
+            // THIS IS THE FIX: Listen for the host's nickname
             call.on('data', (data) => {
                 if (data.nickname) {
                     const remoteNickname = data.nickname;
@@ -547,7 +529,6 @@
                 video.srcObject = remoteUserStream;
                 remoteVideoDiv.append(video, remoteMicIcon, remoteAvatar);
                 remoteMicIcon.style.display = 'block';
-
                 remoteUserStream.getTracks().forEach(track => {
                     track.onmute = () => {
                         if (track.kind === 'audio') updateRemoteMicUI(false);
@@ -559,7 +540,6 @@
                     };
                 });
             });
-            
             call.on('close', hangUp);
         };
         
@@ -671,4 +651,4 @@
         });
     </script>
 </body>
-</html> 
+</html>
