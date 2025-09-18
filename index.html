@@ -408,6 +408,7 @@
             peer.on('call', (call) => {
                 const callType = call.metadata?.type;
                 if (callType === 'screen') {
+                    // Screen share logic (no changes here)
                     call.answer();
                     call.on('stream', (remoteScreenStream) => {
                         screenShareDiv.innerHTML = '';
@@ -418,23 +419,24 @@
                     call.on('close', () => { screenShareDiv.innerHTML = '<span>Screen share has ended</span>'; });
                     screenCall = call;
                 } else { 
-                    // =======================================================
-                    // === THIS IS THE FULLY CORRECTED LOGIC FOR THE HOST ===
-                    // =======================================================
+                    // This is the HOST's logic for a new video call.
                     
-                    // 1. Read the incoming guest's nickname from metadata.
+                    // 1. Immediately get the guest's name from metadata.
                     const remoteNickname = call.metadata.nickname;
                     remoteVideoWrapper.querySelector('h2').textContent = remoteNickname;
                     
-                    // 2. Answer the call with the host's local stream.
+                    // 2. Answer the call.
                     call.answer(localStream);
-                    
-                    // 3. IMPORTANT: When the data connection is open, send the host's nickname back.
-                    call.on('open', () => {
-                        call.send({ nickname: localNickname });
+
+                    // 3. Listen for data (specifically, the guest's request for our name).
+                    call.on('data', (data) => {
+                        // When guest asks for our name, we send it back.
+                        if (data.action === 'request_nickname') {
+                            call.send({ nickname: localNickname });
+                        }
                     });
-                    
-                    // 4. Handle the rest of the call events (stream, data, close).
+
+                    // 4. Handle the stream and close events.
                     handleEstablishedCall(call);
                 }
             });
@@ -506,18 +508,35 @@
             setupInCallControls(false);
             peer = new Peer();
             peer.on('open', () => {
+                // This is the GUEST's logic for starting a call.
                 const call = peer.call(roomId, localStream, { 
                     metadata: { nickname: localNickname, type: 'video' } 
                 });
+
+                // 1. When the data connection opens, send a request for the host's name.
+                call.on('open', () => {
+                    call.send({ action: 'request_nickname' });
+                });
+
+                // 2. Listen for the response from the host.
+                call.on('data', (data) => {
+                    if (data.nickname) {
+                        remoteVideoWrapper.querySelector('h2').textContent = data.nickname;
+                    }
+                });
+
                 call.on('error', (err) => {
                     showToast("Failed to connect. The room ID may be invalid.", "error");
                     window.location.href = window.location.pathname;
                 });
+                
                 handleEstablishedCall(call);
             });
-            setupCallListeners();
+            setupCallListeners(); // This is for receiving screen share calls.
         };
 
+        // This function now ONLY handles the video stream and closing the connection.
+        // The nickname logic has been moved to be more explicit and reliable.
         const handleEstablishedCall = (call) => {
             if (!call) {
                 showToast("Failed to initiate call. Please refresh.", "error");
@@ -525,14 +544,6 @@
                 return;
             }
             currentCall = call;
-
-            // This listener correctly handles receiving the nickname from the other user.
-            call.on('data', (data) => {
-                if (data.nickname) {
-                    const remoteNickname = data.nickname;
-                    remoteVideoWrapper.querySelector('h2').textContent = remoteNickname;
-                }
-            });
 
             call.on('stream', (remoteUserStream) => {
                 remoteVideoDiv.innerHTML = '';
