@@ -418,12 +418,23 @@
                     call.on('close', () => { screenShareDiv.innerHTML = '<span>Screen share has ended</span>'; });
                     screenCall = call;
                 } else { 
+                    // =======================================================
+                    // === THIS IS THE FULLY CORRECTED LOGIC FOR THE HOST ===
+                    // =======================================================
+                    
+                    // 1. Read the incoming guest's nickname from metadata.
                     const remoteNickname = call.metadata.nickname;
                     remoteVideoWrapper.querySelector('h2').textContent = remoteNickname;
+                    
+                    // 2. Answer the call with the host's local stream.
+                    call.answer(localStream);
+                    
+                    // 3. IMPORTANT: When the data connection is open, send the host's nickname back.
                     call.on('open', () => {
                         call.send({ nickname: localNickname });
                     });
-                    call.answer(localStream);
+                    
+                    // 4. Handle the rest of the call events (stream, data, close).
                     handleEstablishedCall(call);
                 }
             });
@@ -507,9 +518,6 @@
             setupCallListeners();
         };
 
-        // =================================================================
-        // THIS IS THE CORRECTED FUNCTION
-        // =================================================================
         const handleEstablishedCall = (call) => {
             if (!call) {
                 showToast("Failed to initiate call. Please refresh.", "error");
@@ -518,8 +526,7 @@
             }
             currentCall = call;
 
-            // THIS LISTENER IS THE CRITICAL FIX
-            // It waits for the other user to send their data (nickname)
+            // This listener correctly handles receiving the nickname from the other user.
             call.on('data', (data) => {
                 if (data.nickname) {
                     const remoteNickname = data.nickname;
