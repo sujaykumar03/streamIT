@@ -304,22 +304,17 @@
         const roomLinkInput = document.getElementById('roomLink');
         const copyLinkBtn = document.getElementById('copyLinkBtn');
         const closeDialogBtn = document.getElementById('closeDialogBtn');
-        const localAvatar = document.getElementById('local-avatar');
-        const remoteAvatar = document.getElementById('remote-avatar');
-        const localMicIcon = document.getElementById('local-mic-icon');
-        const remoteMicIcon = document.getElementById('remote-mic-icon');
         const localVideoWrapper = document.getElementById('local-video-wrapper');
         const remoteVideoWrapper = document.getElementById('remote-video-wrapper');
+        
+        // --- ADAPTED FROM YOUR REFACTORED SCRIPT ---
+        let peer = null;
+        let localStream = null;
+        let roomId = null;
+        let localNickname = "";
+        let isHost = false;
 
-        // --- State Variables ---
-        let peer;
-        let localStream;
-        let screenStream;
-        let currentCall;
-        let screenCall;
-        let localNickname = '';
-
-        // --- UI Functions ---
+        // --- UI Functions from Original Script ---
         const showToast = (message, type = 'info') => {
             const toastContainer = document.getElementById('toast-container');
             if (!toastContainer) return;
@@ -330,14 +325,6 @@
             setTimeout(() => { toast.remove(); }, 3000);
         };
 
-        const createVideoElement = (muted = false) => {
-            const video = document.createElement('video');
-            video.autoplay = true;
-            video.playsInline = true;
-            video.muted = muted;
-            return video;
-        };
-        
         const setupInitialControls = () => {
             controlsDiv.innerHTML = `
                 <div id="initial-controls">
@@ -351,303 +338,177 @@
                 </div>
             `;
             lucide.createIcons();
-            document.getElementById('create-room-btn').addEventListener('click', createRoom);
-            document.getElementById('join-room-btn').addEventListener('click', handleJoinForm);
-            document.getElementById('join-room-input').addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleJoinForm();
-                }
+            document.getElementById('create-room-btn').addEventListener('click', () => {
+                const nickname = document.getElementById('nickname-input').value;
+                if (!nickname) { showToast("Please enter a nickname.", "error"); return; }
+                createRoom(nickname);
             });
-             document.getElementById('nickname-input').addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    if(document.getElementById('join-room-input').value) {
-                        handleJoinForm();
+            document.getElementById('join-room-btn').addEventListener('click', () => {
+                const nickname = document.getElementById('nickname-input').value;
+                const url = document.getElementById('join-room-input').value;
+                if (!nickname) { showToast("Please enter a nickname.", "error"); return; }
+                if (!url) { showToast("Please paste a room link.", "error"); return; }
+                try {
+                    const id = new URL(url).searchParams.get('room');
+                    if (id) {
+                        joinExistingRoom(nickname, id);
                     } else {
-                        createRoom();
+                        showToast("This is not a valid room link.", "error");
                     }
+                } catch (e) {
+                    showToast("Invalid room link format.", "error");
                 }
             });
         };
+        
+        // --- Logic Functions adapted from your refactored script ---
+        function initializePeer(nickname) {
+            localNickname = nickname;
+            peer = new Peer();
 
-        const setupInCallControls = (isHost = false) => {
-            controlsDiv.innerHTML = ''; 
-            controlsDiv.className = 'control-bar';
-            let hostControls = isHost ? `<button id="share-screen-btn" title="Share Screen"><i data-lucide="screen-share"></i></button>` : '';
-            controlsDiv.innerHTML = `
-                <button id="mic-btn" title="Mute/Unmute"><i data-lucide="mic"></i></button>
-                <button id="camera-btn" title="Stop/Start Camera"><i data-lucide="video"></i></button>
-                ${hostControls}
-                <button id="hangup-btn" class="red" title="End Call"><i data-lucide="phone-off"></i></button>
-            `;
-            lucide.createIcons();
-            if (isHost) document.getElementById('share-screen-btn').addEventListener('click', toggleScreenShare);
-            document.getElementById('mic-btn').addEventListener('click', toggleMic);
-            document.getElementById('camera-btn').addEventListener('click', toggleCamera);
-            document.getElementById('hangup-btn').addEventListener('click', hangUp);
-        };
-
-        // --- WebRTC Core Logic ---
-        const getLocalMedia = async () => {
-            try {
-                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                localVideoDiv.innerHTML = ''; 
-                const localVideo = createVideoElement(true);
-                localVideo.srcObject = localStream;
-                localVideoDiv.append(localVideo, localMicIcon, localAvatar);
-                localMicIcon.style.display = 'block';
-            } catch (err) {
-                console.error("Failed to get local media", err);
-                showToast("Camera and microphone access are required.", "error");
-                throw err;
-            }
-        };
-
-        const setupCallListeners = () => {
-            peer.on('call', (call) => {
-                const callType = call.metadata?.type;
-                if (callType === 'screen') {
-                    // Screen share logic (no changes here)
-                    call.answer();
-                    call.on('stream', (remoteScreenStream) => {
-                        screenShareDiv.innerHTML = '';
-                        const video = createVideoElement();
-                        video.srcObject = remoteScreenStream;
-                        screenShareDiv.append(video);
-                    });
-                    call.on('close', () => { screenShareDiv.innerHTML = '<span>Screen share has ended</span>'; });
-                    screenCall = call;
-                } else { 
-                    // This is the HOST's logic for a new video call.
-                    
-                    // 1. Immediately get the guest's name from metadata.
-                    const remoteNickname = call.metadata.nickname;
-                    remoteVideoWrapper.querySelector('h2').textContent = remoteNickname;
-                    
-                    // 2. Answer the call.
-                    call.answer(localStream);
-
-                    // 3. Listen for data (specifically, the guest's request for our name).
-                    call.on('data', (data) => {
-                        // When guest asks for our name, we send it back.
-                        if (data.action === 'request_nickname') {
-                            call.send({ nickname: localNickname });
-                        }
-                    });
-
-                    // 4. Handle the stream and close events.
-                    handleEstablishedCall(call);
+            peer.on('open', (id) => {
+                console.log("Peer connected with ID:", id);
+                if (isHost) {
+                    roomId = id;
+                    const fullLink = `${window.location.origin}${window.location.pathname}?room=${id}`;
+                    roomLinkInput.value = fullLink;
+                    roomDialog.style.display = 'block';
+                    setupCallListeners();
+                } else {
+                    joinRoom();
                 }
             });
-            peer.on('disconnected', () => {
-                showToast('Connection to the server has been lost.', 'error');
-                hangUp();
-            });
+
             peer.on('error', (err) => {
-                console.error('PeerJS Error:', err);
+                console.error("Peer error:", err);
                 showToast(`Connection error: ${err.type}`, 'error');
             });
-        };
-
-        const createRoom = async () => {
-            localNickname = document.getElementById('nickname-input').value.trim();
-            if (!localNickname) {
-                showToast("Please enter a nickname.", "error");
-                return;
-            }
-            controlsDiv.innerHTML = '<h4 style="color: var(--text-secondary); font-weight: 500;">Creating room...</h4>';
-            try {
-                await getLocalMedia();
-            } catch {
-                setupInitialControls();
-                return;
-            }
-            localVideoWrapper.querySelector('h2').textContent = `${localNickname} (You)`;
-            setupInCallControls(true);
-            peer = new Peer(); 
-            peer.on('open', (id) => {
-                roomLinkInput.value = `${window.location.origin}${window.location.pathname}?room=${id}`;
-                roomDialog.style.display = 'block';
-            });
-            setupCallListeners();
-        };
-        
-        const handleJoinForm = () => {
-            localNickname = document.getElementById('nickname-input').value.trim();
-            if (!localNickname) {
-                showToast("Please enter a nickname.", "error");
-                return;
-            }
-            const url = document.getElementById('join-room-input').value;
-            if (!url) {
-                showToast("Please paste a room link.", "error");
-                return;
-            }
-            try {
-                const roomId = new URL(url).searchParams.get('room');
-                if (roomId) {
-                    controlsDiv.innerHTML = "<h4 style='color: var(--text-secondary); font-weight: 500;'>Joining room...</h4>";
-                    joinRoom(roomId);
-                } else {
-                    showToast("This does not appear to be a valid room link.", "error");
-                }
-            } catch (error) {
-                showToast("Invalid room link format.", "error");
-            }
         }
-        
-        const joinRoom = async (roomId) => {
-            try {
-                await getLocalMedia();
-            } catch {
-                window.location.href = window.location.pathname;
-                return;
-            }
-            localVideoWrapper.querySelector('h2').textContent = `${localNickname} (You)`;
-            setupInCallControls(false);
-            peer = new Peer();
-            peer.on('open', () => {
-                // This is the GUEST's logic for starting a call.
-                const call = peer.call(roomId, localStream, { 
-                    metadata: { nickname: localNickname, type: 'video' } 
-                });
 
-                // 1. When the data connection opens, send a request for the host's name.
-                call.on('open', () => {
-                    call.send({ action: 'request_nickname' });
-                });
-
-                // 2. Listen for the response from the host.
-                call.on('data', (data) => {
-                    if (data.nickname) {
-                        remoteVideoWrapper.querySelector('h2').textContent = data.nickname;
-                    }
-                });
-
-                call.on('error', (err) => {
-                    showToast("Failed to connect. The room ID may be invalid.", "error");
-                    window.location.href = window.location.pathname;
-                });
-                
+        // ✅ Host side
+        function setupCallListeners() {
+            peer.on('call', (call) => {
+                console.log("Incoming call from:", call.metadata?.nickname);
+                call.answer(localStream);
                 handleEstablishedCall(call);
             });
-            setupCallListeners(); // This is for receiving screen share calls.
-        };
 
-        // This function now ONLY handles the video stream and closing the connection.
-        // The nickname logic has been moved to be more explicit and reliable.
-        const handleEstablishedCall = (call) => {
-            if (!call) {
-                showToast("Failed to initiate call. Please refresh.", "error");
-                hangUp();
-                return;
-            }
-            currentCall = call;
-
-            call.on('stream', (remoteUserStream) => {
-                remoteVideoDiv.innerHTML = '';
-                const video = createVideoElement();
-                video.srcObject = remoteUserStream;
-                remoteVideoDiv.append(video, remoteMicIcon, remoteAvatar);
-                remoteMicIcon.style.display = 'block';
-                remoteUserStream.getTracks().forEach(track => {
-                    track.onmute = () => {
-                        if (track.kind === 'audio') updateRemoteMicUI(false);
-                        if (track.kind === 'video') updateRemoteCameraUI(false);
-                    };
-                    track.onunmute = () => {
-                        if (track.kind === 'audio') updateRemoteMicUI(true);
-                        if (track.kind === 'video') updateRemoteCameraUI(true);
-                    };
+            peer.on('connection', (conn) => {
+                console.log("Data connection established with guest");
+                conn.on('data', (data) => {
+                    console.log("Host received data:", data);
+                    if (data.action === 'request_nickname') {
+                        conn.send({ nickname: localNickname });
+                    }
                 });
             });
-            
-            call.on('close', hangUp);
-        };
-        
-        const toggleScreenShare = async () => {
-            const btn = document.getElementById('share-screen-btn');
-            if (!btn) return;
-            const isActive = screenStream && screenStream.active;
-            if (isActive) {
-                screenStream.getTracks().forEach(track => track.stop());
-                screenStream = null;
-                screenCall?.close();
-                screenCall = null;
-                screenShareDiv.innerHTML = '<span>Screen share will appear here</span>';
-                btn.innerHTML = `<i data-lucide="screen-share"></i>`;
-                lucide.createIcons();
-            } else {
-                try {
-                    const displayMediaOptions = { video: { cursor: "always", frameRate: 30, latencyHint: "interactive", contentHint: "motion" }, audio: false };
-                    screenStream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
-                    const screenTrack = screenStream.getVideoTracks()[0];
-                    if (currentCall) {
-                        screenCall = peer.call(currentCall.peer, screenStream, { metadata: { type: 'screen' } });
-                    }
-                    screenShareDiv.innerHTML = '';
-                    const video = createVideoElement(true);
-                    video.srcObject = screenStream;
-                    screenShareDiv.append(video);
-                    btn.innerHTML = `<i data-lucide="screen-share-off"></i>`;
-                    lucide.createIcons();
-                    screenTrack.onended = () => {
-                        if (document.getElementById('share-screen-btn')) toggleScreenShare();
-                    };
-                } catch (err) {
-                    console.error("Screen share failed", err);
-                    showToast("Could not start screen share.", "error");
-                    btn.innerHTML = `<i data-lucide="screen-share"></i>`;
-                    lucide.createIcons();
+        }
+
+        // ✅ Guest side
+        function joinRoom() {
+            if (!roomId || !peer || !localStream) {
+                console.error("Missing room ID, peer, or local stream");
+                return;
+            }
+            console.log("Joining room:", roomId);
+
+            const call = peer.call(roomId, localStream, { metadata: { nickname: localNickname } });
+            handleEstablishedCall(call);
+
+            const conn = peer.connect(roomId);
+            conn.on('open', () => {
+                console.log("Data connection open with host");
+                conn.send({ action: 'request_nickname' });
+            });
+
+            conn.on('data', (data) => {
+                console.log("Guest received data:", data);
+                if (data.nickname) {
+                    // ADAPTED: Target the specific h2 for the remote video
+                    remoteVideoWrapper.querySelector('h2').textContent = data.nickname;
                 }
-            }
-        };
+            });
+        }
 
-        const hangUp = () => {
-            peer?.destroy();
-            localStream?.getTracks().forEach(track => track.stop());
-            screenStream?.getTracks().forEach(track => track.stop());
-            window.location.href = window.location.pathname;
-        };
+        function handleEstablishedCall(call) {
+            call.on('stream', (remoteStream) => {
+                console.log("Received remote stream");
+                // ADAPTED: Target the existing remote video div
+                remoteVideoDiv.innerHTML = '';
+                const remoteVideo = document.createElement('video');
+                remoteVideo.srcObject = remoteStream;
+                remoteVideo.autoplay = true;
+                remoteVideo.playsInline = true;
+                remoteVideoDiv.appendChild(remoteVideo);
 
-        const toggleMic = () => {
-            const track = localStream?.getAudioTracks()[0];
-            const btn = document.getElementById('mic-btn');
-            if (track) {
-                track.enabled = !track.enabled;
-                const isEnabled = track.enabled;
-                btn.innerHTML = `<i data-lucide="${isEnabled ? 'mic' : 'mic-off'}"></i>`;
-                btn.classList.toggle('red', !isEnabled);
-                localMicIcon.querySelector('i').outerHTML = `<i data-lucide="${isEnabled ? 'mic' : 'mic-off'}"></i>`;
-                lucide.createIcons();
-            }
-        };
+                // ADAPTED: Set initial name from metadata
+                remoteVideoWrapper.querySelector('h2').textContent = call.metadata?.nickname || 'Guest';
+            });
 
-        const toggleCamera = () => {
-            const track = localStream?.getVideoTracks()[0];
-            const btn = document.getElementById('camera-btn');
-            if (track) {
-                track.enabled = !track.enabled;
-                const isEnabled = track.enabled;
-                btn.innerHTML = `<i data-lucide="${isEnabled ? 'video' : 'video-off'}"></i>`;
-                btn.classList.toggle('red', !isEnabled);
-                localVideoDiv.querySelector('video').style.display = isEnabled ? 'block' : 'none';
-                localAvatar.style.display = isEnabled ? 'none' : 'flex';
-                lucide.createIcons();
+            call.on('close', () => {
+                console.log("Call closed with:", call.peer);
+                remoteVideoDiv.innerHTML = ''; // Clear the div
+                remoteVideoWrapper.querySelector('h2').textContent = 'Remote Video';
+            });
+        }
+
+        function startLocalStream(nickname) {
+            return navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+                .then((stream) => {
+                    localStream = stream;
+                    // ADAPTED: Target the existing local video div
+                    localVideoDiv.innerHTML = '';
+                    const localVideo = document.createElement('video');
+                    localVideo.srcObject = stream;
+                    localVideo.muted = true;
+                    localVideo.autoplay = true;
+                    localVideo.playsInline = true;
+                    localVideoDiv.appendChild(localVideo);
+                    
+                    // ADAPTED: Update the name tag
+                    localVideoWrapper.querySelector('h2').textContent = `${nickname} (You)`;
+                    controlsDiv.innerHTML = ''; // Clear initial controls
+                })
+                .catch((err) => {
+                    console.error("Error accessing media devices:", err);
+                    showToast("Camera/Mic access is required to use this app.", "error");
+                    throw err; // Propagate error to stop execution
+                });
+        }
+
+        function createRoom(nickname) {
+            isHost = true;
+            startLocalStream(nickname).then(() => {
+                initializePeer(nickname);
+            }).catch(() => {
+                setupInitialControls(); // Reset controls if media fails
+            });
+        }
+
+        function joinExistingRoom(nickname, id) {
+            isHost = false;
+            roomId = id;
+            startLocalStream(nickname).then(() => {
+                initializePeer(nickname);
+            }).catch(() => {
+                setupInitialControls(); // Reset controls if media fails
+            });
+        }
+
+        // --- Initial Load ---
+        window.addEventListener('load', () => {
+            lucide.createIcons();
+            setupInitialControls();
+            
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlRoomId = urlParams.get('room');
+            if (urlRoomId) {
+                document.getElementById('join-room-input').value = window.location.href;
+                showToast('Room link detected. Enter a nickname to join.');
             }
-        };
+        });
         
-        const updateRemoteMicUI = (isEnabled) => {
-             remoteMicIcon.querySelector('i').outerHTML = `<i data-lucide="${isEnabled ? 'mic' : 'mic-off'}"></i>`;
-             lucide.createIcons();
-        };
-        const updateRemoteCameraUI = (isEnabled) => {
-            const remoteVideo = remoteVideoDiv.querySelector('video');
-            if (remoteVideo) remoteVideo.style.display = isEnabled ? 'block' : 'none';
-            remoteAvatar.style.display = isEnabled ? 'none' : 'flex';
-        };
-
+        // --- Dialog button listeners ---
         copyLinkBtn.addEventListener('click', () => {
             navigator.clipboard.writeText(roomLinkInput.value).then(() => {
                 showToast('Link copied to clipboard!', 'success');
@@ -660,18 +521,6 @@
             roomDialog.style.display = 'none';
         });
 
-        window.addEventListener('load', () => {
-            lucide.createIcons();
-            const urlParams = new URLSearchParams(window.location.search);
-            const roomId = urlParams.get('room');
-            
-            setupInitialControls();
-
-            if (roomId) {
-                document.getElementById('join-room-input').value = window.location.href;
-                showToast('Room link detected. Enter a nickname to join.');
-            }
-        });
     </script>
 </body>
 </html>
