@@ -317,6 +317,7 @@
         let screenStream = null;
         let currentCall = null;
         let screenCall = null;
+        let dataConnection = null;
         let roomId = null;
         let localNickname = "";
         let isHost = false;
@@ -412,80 +413,85 @@
             });
 
             peer.on('error', (err) => {
-                console.error("Peer error:", err);
+                console.error("PeerJS Error:", err);
                 showToast(`Connection error: ${err.type}`, 'error');
+                hangUp();
+            });
+            
+            peer.on('close', () => {
+                console.log('Peer connection closed.');
             });
         }
 
         function setupCallListeners() {
-            peer.on('call', (call) => {
-                // This handles both regular video calls and incoming screen share calls
-                const callType = call.metadata?.type;
-                if (callType === 'screen') {
-                     call.answer();
-                     call.on('stream', (remoteScreenStream) => {
-                         screenShareDiv.innerHTML = '';
-                         const video = createVideoElement();
-                         video.srcObject = remoteScreenStream;
-                         screenShareDiv.append(video);
-                     });
-                     call.on('close', () => { screenShareDiv.innerHTML = '<span>Screen share has ended</span>'; });
-                     screenCall = call;
-                } else {
-                    console.log("Incoming call from:", call.metadata?.nickname);
-                    call.answer(localStream);
-                    handleEstablishedCall(call);
-                }
-            });
-
+            // Handles incoming connections from guests
             peer.on('connection', (conn) => {
-                console.log("Data connection established with guest");
+                console.log("Incoming data connection");
+                dataConnection = conn;
                 conn.on('data', (data) => {
-                    console.log("Host received data:", data);
                     if (data.action === 'request_nickname') {
                         conn.send({ nickname: localNickname });
                     }
                 });
+                conn.on('close', () => {
+                    console.log('Data connection closed.');
+                    resetRemoteUI();
+                });
+            });
+
+            peer.on('call', (call) => {
+                const callType = call.metadata?.type;
+                if (callType === 'screen') {
+                    console.log("Incoming screen share call");
+                    call.answer(); 
+                    call.on('stream', (remoteScreenStream) => {
+                        screenShareDiv.innerHTML = '';
+                        const video = createVideoElement(false);
+                        video.srcObject = remoteScreenStream;
+                        screenShareDiv.append(video);
+                    });
+                    screenCall = call;
+                } else {
+                    console.log("Incoming video call from:", call.metadata?.nickname);
+                    call.answer(localStream);
+                    handleEstablishedCall(call);
+                }
             });
         }
 
         function joinRoom() {
-            if (!roomId || !peer || !localStream) {
-                console.error("Missing room ID, peer, or local stream");
-                return;
-            }
+            if (!roomId || !peer || !localStream) { return; }
             console.log("Joining room:", roomId);
 
             const call = peer.call(roomId, localStream, { metadata: { nickname: localNickname, type: 'video' } });
             handleEstablishedCall(call);
 
-            const conn = peer.connect(roomId);
-            conn.on('open', () => {
-                console.log("Data connection open with host");
-                conn.send({ action: 'request_nickname' });
+            dataConnection = peer.connect(roomId);
+            dataConnection.on('open', () => {
+                dataConnection.send({ action: 'request_nickname' });
             });
-
-            conn.on('data', (data) => {
-                console.log("Guest received data:", data);
+            dataConnection.on('data', (data) => {
                 if (data.nickname) {
                     remoteVideoWrapper.querySelector('h2').textContent = data.nickname;
                 }
             });
+            dataConnection.on('close', () => {
+                console.log('Data connection to host closed.');
+                hangUp();
+            });
         }
 
         function handleEstablishedCall(call) {
-            currentCall = call; // Set the current call for screen sharing
+            currentCall = call; 
+            
             call.on('stream', (remoteStream) => {
-                console.log("Received remote stream");
                 remoteVideoDiv.innerHTML = '';
                 const remoteVideo = createVideoElement();
                 remoteVideo.srcObject = remoteStream;
                 remoteVideoDiv.append(remoteVideo, remoteMicIcon, remoteAvatar);
                 remoteMicIcon.style.display = 'block';
-
                 remoteVideoWrapper.querySelector('h2').textContent = call.metadata?.nickname || 'Guest';
 
-                // Listen for mute/unmute events from the remote user
                 remoteStream.getTracks().forEach(track => {
                     track.onmute = () => {
                         if (track.kind === 'audio') updateRemoteMicUI(false);
@@ -499,8 +505,8 @@
             });
 
             call.on('close', () => {
-                console.log("Call closed with:", call.peer);
-                hangUp();
+                console.log("The main call was closed.");
+                resetRemoteUI();
             });
         }
 
@@ -513,7 +519,6 @@
                     localVideo.srcObject = stream;
                     localVideoDiv.append(localVideo, localMicIcon, localAvatar);
                     localMicIcon.style.display = 'block';
-                    
                     localVideoWrapper.querySelector('h2').textContent = `${nickname} (You)`;
                     controlsDiv.innerHTML = '';
                 })
@@ -544,13 +549,28 @@
                 setupInitialControls();
             });
         }
+        
+        function resetRemoteUI() {
+            remoteVideoDiv.innerHTML = '';
+            remoteVideoWrapper.querySelector('h2').textContent = "Remote Video";
+            remoteMicIcon.style.display = 'none';
+            screenShareDiv.innerHTML = '<span>Screen share will appear here</span>';
+            currentCall = null;
+        }
 
         // --- In-Call Control Functions ---
         const hangUp = () => {
-            peer?.destroy();
+            currentCall?.close();
+            screenCall?.close();
+            dataConnection?.close();
             localStream?.getTracks().forEach(track => track.stop());
             screenStream?.getTracks().forEach(track => track.stop());
-            window.location.href = window.location.pathname;
+            if (peer && !peer.destroyed) {
+                peer.destroy();
+            }
+            setTimeout(() => {
+                window.location.href = window.location.pathname;
+            }, 100);
         };
         
         const toggleMic = () => {
@@ -587,27 +607,28 @@
             const isActive = screenStream && screenStream.active;
             if (isActive) {
                 screenStream.getTracks().forEach(track => track.stop());
-                screenStream = null;
                 screenCall?.close();
+                screenStream = null;
                 screenCall = null;
                 screenShareDiv.innerHTML = '<span>Screen share will appear here</span>';
                 btn.innerHTML = `<i data-lucide="screen-share"></i>`;
                 lucide.createIcons();
             } else {
+                if (!currentCall) {
+                    showToast("You must be connected to another user to share your screen.", "error");
+                    return;
+                }
                 try {
                     screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-                    const screenTrack = screenStream.getVideoTracks()[0];
-                    if (currentCall) {
-                        screenCall = peer.call(currentCall.peer, screenStream, { metadata: { type: 'screen' } });
-                    }
+                    screenCall = peer.call(currentCall.peer, screenStream, { metadata: { type: 'screen' } });
                     screenShareDiv.innerHTML = '';
                     const video = createVideoElement(true);
                     video.srcObject = screenStream;
                     screenShareDiv.append(video);
                     btn.innerHTML = `<i data-lucide="screen-share-off"></i>`;
                     lucide.createIcons();
-                    screenTrack.onended = () => {
-                        if (document.getElementById('share-screen-btn')) toggleScreenShare();
+                    screenStream.getVideoTracks()[0].onended = () => {
+                        toggleScreenShare();
                     };
                 } catch (err) {
                     console.error("Screen share failed", err);
@@ -629,7 +650,6 @@
             remoteAvatar.style.display = isEnabled ? 'none' : 'flex';
         };
 
-
         // --- Initial Load ---
         window.addEventListener('load', () => {
             lucide.createIcons();
@@ -648,7 +668,6 @@
             navigator.clipboard.writeText(roomLinkInput.value).then(() => {
                 showToast('Link copied to clipboard!', 'success');
             }).catch(err => {
-                console.error('Failed to copy: ', err);
                 showToast('Failed to copy link.', 'error');
             });
         });
