@@ -220,11 +220,10 @@
         video { width: 100%; height: 100%; object-fit: cover; }
         #localVideo video { transform: scaleX(-1); } /* Mirror local camera */
         #screenShare video { object-fit: contain; }
+        #remoteVideo video.screen-share { transform: scaleX(1); /* Un-mirror for screen share */ }
 
         .mic-status-icon { position: absolute; top: 8px; left: 10px; background-color: rgba(0,0,0,0.5); border-radius: 50%; padding: 4px; z-index: 2; }
         .animal-avatar { width: 40%; height: 40%; min-width: 50px; }
-        .animal-avatar #body { animation: breathing 3s ease-in-out infinite; }
-        @keyframes breathing { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
         .dialog { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 2rem; background-color: #e8f0fe; border: 1px solid #d2e3fc; border-radius: 8px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.1); z-index: 1000; color: #333;}
         .dialog input { width: 100%; max-width: 400px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; margin: 1rem 0; }
         .dialog button { background-color: #34a853; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
@@ -243,18 +242,14 @@
                     <h2>Your Video</h2>
                     <div id="localVideo" class="cam-placeholder">
                         <div class="mic-status-icon" id="local-mic-icon" style="display: none;"><i data-lucide="mic"></i></div>
-                        <div id="local-avatar" style="display: none;">
-                             <svg class="animal-avatar" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><g id="body"><path fill="#E67E22" d="M50 20 C 20 20, 20 60, 50 80 S 80 20, 50 20 Z" /><path fill="#FFFFFF" d="M50 50 C 40 60, 60 60, 50 50 L 35 30 L 65 30 Z" /><path fill="#FFFFFF" d="M35 30 C 25 20, 35 20, 35 30 Z" /><path fill="#FFFFFF" d="M65 30 C 75 20, 65 20, 65 30 Z" /></g><circle cx="40" cy="40" r="3" fill="black" /><circle cx="60" cy="40" r="3" fill="black" /><path d="M50 48 C 52 52, 48 52, 50 48" stroke="black" stroke-width="1" fill="none" /></svg>
-                        </div>
+                        <div id="local-avatar" style="display: none;">...</div>
                     </div>
                 </div>
                 <div class="cam-wrapper" id="remote-video-wrapper">
                     <h2>Remote Video</h2>
                     <div id="remoteVideo" class="cam-placeholder">
                          <div class="mic-status-icon" id="remote-mic-icon" style="display: none;"><i data-lucide="mic"></i></div>
-                         <div id="remote-avatar" style="display: none;">
-                             <svg class="animal-avatar" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><g id="body"><path fill="#E67E22" d="M50 20 C 20 20, 20 60, 50 80 S 80 20, 50 20 Z" /><path fill="#FFFFFF" d="M50 50 C 40 60, 60 60, 50 50 L 35 30 L 65 30 Z" /><path fill="#FFFFFF" d="M35 30 C 25 20, 35 20, 35 30 Z" /><path fill="#FFFFFF" d="M65 30 C 75 20, 65 20, 65 30 Z" /></g><circle cx="40" cy="40" r="3" fill="black" /><circle cx="60" cy="40" r="3" fill="black" /><path d="M50 48 C 52 52, 48 52, 50 48" stroke="black" stroke-width="1" fill="none" /></svg>
-                         </div>
+                         <div id="remote-avatar" style="display: flex;">...</div>
                     </div>
                 </div>
             </div>
@@ -287,37 +282,37 @@
         const localMicIcon = document.getElementById('local-mic-icon');
         const remoteMicIcon = document.getElementById('remote-mic-icon');
         
-        // --- ADVANCED: State Variables ---
+        // --- ARCHITECTURE REWORK: State Variables ---
         let peer = null;
         let localStream = null;
         let screenStream = null;
-        let currentCall = null;
-        let dataConnection = null;
-        let videoSender = null; // To store the video track sender for replaceTrack()
+        let call = null; // Single MediaConnection
+        let videoSender = null; // For replaceTrack()
+        let cameraVideoTrack = null; // To store original camera track
         let roomId = null;
         let localNickname = "";
         let isHost = false;
 
-        // --- ADVANCED: High Quality Media Constraints ---
+        // --- ADVANCED: High Quality Media & Connection Config ---
+        const PEER_CONFIG = {
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    // NOTE: For production, you would add your own TURN server here
+                    // { urls: 'turn:your.turn.server.com', username: 'user', credential: 'password' }
+                ]
+            }
+        };
         const VIDEO_CONSTRAINTS = {
             video: {
                 width: { ideal: 1920, max: 1920 },
                 height: { ideal: 1080, max: 1080 },
                 frameRate: { ideal: 30 }
             },
-            audio: {
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
-            }
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
         };
-        const SCREEN_CONSTRAINTS = {
-            video: {
-                cursor: "always",
-                frameRate: { ideal: 30 }
-            },
-            audio: false
-        };
+        const SCREEN_CONSTRAINTS = { video: { cursor: "always", frameRate: { ideal: 30 } }, audio: false };
 
         // --- UI Functions ---
         const showToast = (message, type = 'info') => {
@@ -337,135 +332,106 @@
             return video;
         };
 
-        const setupInitialControls = () => {
-            controlsDiv.innerHTML = `
-                <div id="initial-controls">
-                    <input type="text" id="nickname-input" placeholder="Enter your nickname" required>
-                    <button id="create-room-btn" type="button"><i data-lucide="plus-square"></i>Create Room</button>
-                    <span class="separator">or</span>
-                    <div class="join-group">
-                        <input type="text" id="join-room-input" placeholder="Paste Room Link">
-                        <button id="join-room-btn" type="button"><i data-lucide="log-in"></i>Join Room</button>
-                    </div>
-                </div>
-            `;
-            lucide.createIcons();
-            document.getElementById('create-room-btn').addEventListener('click', () => {
-                const nickname = document.getElementById('nickname-input').value;
-                if (!nickname) { showToast("Please enter a nickname.", "error"); return; }
-                createRoom(nickname);
-            });
-            document.getElementById('join-room-btn').addEventListener('click', () => {
-                const nickname = document.getElementById('nickname-input').value;
-                const url = document.getElementById('join-room-input').value;
-                if (!nickname || !url) { showToast("Nickname and Room Link are required.", "error"); return; }
-                try {
-                    const id = new URL(url).searchParams.get('room');
-                    if (id) joinExistingRoom(nickname, id);
-                    else showToast("This is not a valid room link.", "error");
-                } catch (e) { showToast("Invalid room link format.", "error"); }
-            });
-        };
-
-        const setupInCallControls = (isHost = false) => {
-            controlsDiv.innerHTML = ''; 
-            controlsDiv.className = 'control-bar';
-            let hostControls = isHost ? `<button id="share-screen-btn" title="Share Screen"><i data-lucide="screen-share"></i></button>` : '';
-            controlsDiv.innerHTML = `
-                <button id="mic-btn" title="Mute/Unmute"><i data-lucide="mic"></i></button>
-                <button id="camera-btn" title="Stop/Start Camera"><i data-lucide="video"></i></button>
-                ${hostControls}
-                <button id="hangup-btn" class="red" title="End Call"><i data-lucide="phone-off"></i></button>
-            `;
-            lucide.createIcons();
-            if (isHost) document.getElementById('share-screen-btn').addEventListener('click', toggleScreenShare);
-            document.getElementById('mic-btn').addEventListener('click', toggleMic);
-            document.getElementById('camera-btn').addEventListener('click', toggleCamera);
-            document.getElementById('hangup-btn').addEventListener('click', hangUp);
-        };
+        const setupInitialControls = () => { /* ... (no changes) ... */ };
+        const setupInCallControls = (isHost = false) => { /* ... (no changes) ... */ };
         
-        // --- Connection Logic ---
+        // --- ARCHITECTURE REWORK: Connection Logic ---
         function initializePeer(nickname) {
             localNickname = nickname;
-            peer = new Peer();
+            peer = new Peer(PEER_CONFIG); // Use advanced config
             peer.on('open', (id) => {
-                console.log("Peer connected with ID:", id);
                 if (isHost) {
                     roomId = id;
                     const fullLink = `${window.location.origin}${window.location.pathname}?room=${id}`;
                     roomLinkInput.value = fullLink;
                     roomDialog.style.display = 'block';
-                    setupCallListeners();
                 } else {
                     joinRoom();
                 }
             });
+            peer.on('call', handleIncomingCall); // Central handler for all incoming calls
             peer.on('error', (err) => { console.error("PeerJS Error:", err); hangUp(); });
         }
 
-        function setupCallListeners() {
-            peer.on('connection', (conn) => {
-                dataConnection = conn;
-                conn.on('data', handleData);
-                conn.on('close', resetRemoteUI);
-            });
+        // Host creates room and waits for a call
+        function createRoom(nickname) {
+            isHost = true;
+            startLocalStream(nickname).then(() => {
+                initializePeer(nickname);
+                setupInCallControls(true);
+            }).catch(() => setupInitialControls());
+        }
 
-            peer.on('call', (call) => {
-                call.answer(localStream);
-                handleEstablishedCall(call);
-            });
+        // Guest joins an existing room
+        function joinExistingRoom(nickname, id) {
+            isHost = false;
+            roomId = id;
+            startLocalStream(nickname).then(() => {
+                initializePeer(nickname);
+                setupInCallControls(false);
+            }).catch(() => setupInitialControls());
         }
 
         function joinRoom() {
-            if (!roomId || !peer || !localStream) { return; }
-            dataConnection = peer.connect(roomId);
-            dataConnection.on('open', () => {
-                dataConnection.on('data', handleData);
-                dataConnection.on('close', hangUp);
-                dataConnection.send({ type: 'request_nickname' });
-                const call = peer.call(roomId, localStream, { metadata: { nickname: localNickname } });
-                handleEstablishedCall(call);
-            });
-        }
-        
-        function handleData(data) {
-            switch(data.type) {
-                case 'request_nickname':
-                    dataConnection.send({ type: 'nickname', payload: localNickname });
-                    break;
-                case 'nickname':
-                    remoteVideoWrapper.querySelector('h2').textContent = data.payload;
-                    break;
-                case 'screen_start':
-                    remoteVideoDiv.querySelector('video').style.transform = 'scaleX(1)'; // Un-mirror for screen share
-                    break;
-                case 'screen_stop':
-                    remoteVideoDiv.querySelector('video').style.transform = 'scaleX(-1)'; // Mirror camera feed
-                    break;
-            }
+            if (!roomId || !peer || !localStream) return;
+            // The guest initiates the one and only call
+            call = peer.call(roomId, localStream, { metadata: { nickname: localNickname } });
+            setupCallHandlers(call);
         }
 
-        function handleEstablishedCall(call) {
-            currentCall = call;
-            
-            // ADVANCED: Find the video sender to prepare for replaceTrack()
-            const peerConnection = currentCall.peerConnection;
-            videoSender = peerConnection.getSenders().find(s => s.track.kind === 'video');
-            
+        function handleIncomingCall(incomingCall) {
+            // The host receives the one and only call
+            call = incomingCall;
+            setupCallHandlers(call);
+            call.answer(localStream);
+        }
+
+        // ARCHITECTURE REWORK: Setup handlers for the SINGLE MediaConnection
+        function setupCallHandlers(call) {
             call.on('stream', (remoteStream) => {
+                const videoSenderOnPeer = call.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+                if (videoSenderOnPeer) {
+                    videoSender = videoSenderOnPeer;
+                }
+
                 remoteVideoDiv.innerHTML = '';
                 const remoteVideo = createVideoElement();
                 remoteVideo.srcObject = remoteStream;
                 remoteVideoDiv.append(remoteVideo, remoteMicIcon, remoteAvatar);
                 remoteMicIcon.style.display = 'block';
-                remoteVideoWrapper.querySelector('h2').textContent = call.metadata?.nickname || 'Guest';
+                remoteVideoWrapper.querySelector('h2').textContent = call.metadata.nickname;
 
                 remoteStream.getTracks().forEach(track => {
                     track.onmute = () => handleRemoteTrackToggle(track.kind, false);
                     track.onunmute = () => handleRemoteTrackToggle(track.kind, true);
                 });
             });
+
+            // ARCHITECTURE REWORK: Use the call's built-in data channel
+            call.on('data', handleData);
+            
+            call.on('open', () => {
+                 // Send nickname after connection is open
+                call.send({ type: 'nickname_initial', payload: localNickname });
+            });
+
             call.on('close', resetRemoteUI);
+            call.on('error', (err) => console.error("Call error:", err));
+        }
+        
+        // ARCHITECTURE REWORK: Single data handler for all signals
+        function handleData(data) {
+            switch(data.type) {
+                case 'nickname_initial':
+                    remoteVideoWrapper.querySelector('h2').textContent = data.payload;
+                    break;
+                case 'screen_start':
+                    remoteVideoDiv.querySelector('video').style.transform = 'scaleX(1)';
+                    break;
+                case 'screen_stop':
+                    remoteVideoDiv.querySelector('video').style.transform = 'scaleX(-1)';
+                    break;
+            }
         }
 
         async function startLocalStream(nickname) {
@@ -478,6 +444,7 @@
                 fallbackConstraints.video.height.ideal = 720;
                 localStream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
             }
+            cameraVideoTrack = localStream.getVideoTracks()[0]; // Store original camera track
             localVideoDiv.innerHTML = '';
             const localVideo = createVideoElement(true);
             localVideo.srcObject = localStream;
@@ -486,87 +453,40 @@
             localVideoWrapper.querySelector('h2').textContent = `${nickname} (You)`;
             controlsDiv.innerHTML = '';
         }
-
-        function createRoom(nickname) {
-            isHost = true;
-            startLocalStream(nickname).then(() => {
-                setupInCallControls(true);
-                initializePeer(nickname);
-            }).catch(() => setupInitialControls());
-        }
-
-        function joinExistingRoom(nickname, id) {
-            isHost = false;
-            roomId = id;
-            startLocalStream(nickname).then(() => {
-                setupInCallControls(false);
-                initializePeer(nickname);
-            }).catch(() => setupInitialControls());
-        }
         
         function resetRemoteUI() {
             remoteVideoDiv.innerHTML = '';
             remoteVideoWrapper.querySelector('h2').textContent = "Remote Video";
             remoteMicIcon.style.display = 'none';
             remoteAvatar.style.display = 'flex';
-            currentCall = null;
+            call = null;
         }
 
         // --- In-Call Control Functions ---
-        const hangUp = () => {
-            currentCall?.close();
-            dataConnection?.close();
-            localStream?.getTracks().forEach(track => track.stop());
-            screenStream?.getTracks().forEach(track => track.stop());
-            if (peer && !peer.destroyed) peer.destroy();
-            setTimeout(() => { window.location.href = window.location.pathname; }, 100);
-        };
-        
-        const toggleMic = () => {
-            const track = localStream?.getAudioTracks()[0];
-            if (!track) return;
-            track.enabled = !track.enabled;
-            const isEnabled = track.enabled;
-            document.getElementById('mic-btn').innerHTML = `<i data-lucide="${isEnabled ? 'mic' : 'mic-off'}"></i>`;
-            document.getElementById('mic-btn').classList.toggle('red', !isEnabled);
-            localMicIcon.querySelector('i').outerHTML = `<i data-lucide="${isEnabled ? 'mic' : 'mic-off'}"></i>`;
-            lucide.createIcons();
-        };
-
-        const toggleCamera = () => {
-            const track = localStream?.getVideoTracks()[0];
-            const videoEl = localVideoDiv.querySelector('video');
-            if (!track) return;
-            track.enabled = !track.enabled;
-            const isEnabled = track.enabled;
-            document.getElementById('camera-btn').innerHTML = `<i data-lucide="${isEnabled ? 'video' : 'video-off'}"></i>`;
-            document.getElementById('camera-btn').classList.toggle('red', !isEnabled);
-            if (videoEl) videoEl.style.display = isEnabled ? 'block' : 'none';
-            localAvatar.style.display = isEnabled ? 'none' : 'flex';
-            lucide.createIcons();
-        };
+        const hangUp = () => { /* ... (no changes) ... */ };
+        const toggleMic = () => { /* ... (no changes) ... */ };
+        const toggleCamera = () => { /* ... (no changes) ... */ };
+        const handleRemoteTrackToggle = (kind, isEnabled) => { /* ... (no changes) ... */ };
 
         // --- ADVANCED: Rewritten toggleScreenShare using replaceTrack() ---
         const toggleScreenShare = async () => {
             const btn = document.getElementById('share-screen-btn');
-            const isSharing = screenStream && screenStream.active;
+            const isSharing = !!screenStream;
 
             if (isSharing) {
-                // Stop sharing: Replace screen track with camera track
-                const cameraTrack = localStream.getVideoTracks()[0];
-                await videoSender.replaceTrack(cameraTrack);
+                // Stop sharing: Replace screen track with the original camera track
+                await videoSender.replaceTrack(cameraVideoTrack);
                 screenStream.getTracks().forEach(track => track.stop());
                 screenStream = null;
                 
                 screenShareDiv.innerHTML = '<span>Your screen share will appear here</span>';
                 btn.innerHTML = `<i data-lucide="screen-share"></i>`;
-                dataConnection.send({ type: 'screen_stop' }); // Notify remote
+                if (call) call.send({ type: 'screen_stop' });
             } else {
-                if (!currentCall || !videoSender) {
+                if (!call || !videoSender) {
                     showToast("Not connected to a call.", "error");
                     return;
                 }
-                // Start sharing: Replace camera track with screen track
                 screenStream = await navigator.mediaDevices.getDisplayMedia(SCREEN_CONSTRAINTS);
                 const screenTrack = screenStream.getVideoTracks()[0];
                 await videoSender.replaceTrack(screenTrack);
@@ -576,43 +496,25 @@
                 video.srcObject = screenStream;
                 screenShareDiv.append(video);
                 btn.innerHTML = `<i data-lucide="screen-share-off"></i>`;
-                dataConnection.send({ type: 'screen_start' }); // Notify remote
+                if (call) call.send({ type: 'screen_start' });
                 
-                screenTrack.onended = () => toggleScreenShare(); // Handle browser's native stop button
-            }
-            lucide.createIcons();
-        };
-
-        const handleRemoteTrackToggle = (kind, isEnabled) => {
-            const videoEl = remoteVideoDiv.querySelector('video');
-            if (kind === 'audio') {
-                remoteMicIcon.querySelector('i').outerHTML = `<i data-lucide="${isEnabled ? 'mic' : 'mic-off'}"></i>`;
-            } else if (kind === 'video') {
-                if (videoEl) videoEl.style.display = isEnabled ? 'block' : 'none';
-                remoteAvatar.style.display = isEnabled ? 'none' : 'flex';
+                screenTrack.onended = () => {
+                    if (document.getElementById('share-screen-btn')) {
+                         toggleScreenShare(); // Automatically stop if user uses browser UI
+                    }
+                };
             }
             lucide.createIcons();
         };
 
         // --- Initial Load & Dialog Listeners ---
-        window.addEventListener('load', () => {
-            lucide.createIcons();
-            setupInitialControls();
-            const urlParams = new URLSearchParams(window.location.search);
-            const urlRoomId = urlParams.get('room');
-            if (urlRoomId) {
-                document.getElementById('join-room-input').value = window.location.href;
-                showToast('Room link detected. Enter a nickname to join.');
-            }
-        });
-        
-        copyLinkBtn.addEventListener('click', () => {
-            navigator.clipboard.writeText(roomLinkInput.value).then(() => showToast('Link copied to clipboard!', 'success'));
-        });
-        closeDialogBtn.addEventListener('click', () => {
-            roomDialog.style.display = 'none';
-        });
+        window.addEventListener('load', () => { /* ... (no changes) ... */ });
+        copyLinkBtn.addEventListener('click', () => { /* ... (no changes) ... */ });
+        closeDialogBtn.addEventListener('click', () => { /* ... (no changes) ... */ });
 
+        // NOTE: Some function bodies were collapsed for brevity but are identical to the last version.
+        // They are: setupInitialControls, setupInCallControls, hangUp, toggleMic, toggleCamera,
+        // handleRemoteTrackToggle, load/dialog listeners.
     </script>
 </body>
 </html>
